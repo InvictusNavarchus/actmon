@@ -11,15 +11,14 @@ publish = false
 anyhow = "1.0"
 clap = { version = "4.6.7", features = ["derive"] }
 evdev = "0.13.2"
-rusqlite = { version = "0.42.0", features = ["bundled"] }
+rusqlite = { version = "0.42.0", features = ["bundled", "backup", "hooks"] }
 rustix = { version = "1.1.6", features = ["event", "fs", "time", "process"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 signal-hook = "0.4.6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-[dev-dependencies]
+sha2 = "0.11.1"
 tempfile = "3.27"
 
 [lints.clippy]

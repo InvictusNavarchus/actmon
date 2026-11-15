@@ -3,6 +3,7 @@
 #[cfg(not(target_os = "linux"))]
 compile_error!("Actmon currently supports Linux only");
 
+pub mod backup;
 pub mod clock;
 pub mod collector;
 pub mod db;
