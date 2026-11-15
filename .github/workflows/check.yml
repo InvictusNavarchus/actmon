@@ -15,3 +15,5 @@ jobs:
       - run: cargo check --locked
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Validate systemd packaging without deployment
+        run: bash scripts/verify-packaging.sh

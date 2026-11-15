@@ -1,0 +1,4 @@
+# Adapt exact names alongside /etc/actmon/USER.env. Do not match physical keyboards.
+# This changes group/mode only on the selected event nodes, including recreation.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="keyboard-debouncer", GROUP="actmon-input", MODE="0640"
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="USB Optical Mouse ", GROUP="actmon-input", MODE="0640"

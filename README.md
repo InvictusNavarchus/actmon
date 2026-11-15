@@ -5,10 +5,12 @@ alongside Batmon and the system journal. It preserves one-second measurements
 permanently, including collection coverage and first/last event timing. It does
 not persist key identities, typed text, or pointer coordinates.
 
-The collector and verified local backup commands are implemented. Daily backup
-scheduling, systemd installation, direct suspend notifications, and optional
-session metadata remain later work;
-the full target architecture is in [DESIGN.md](DESIGN.md).
+The collector, verified local backup commands, and systemd deployment templates
+are implemented. See [systemd deployment](docs/systemd.md) for reviewed installation,
+device permissions, daily scheduling, and opt-out instructions. Deployment is an
+explicit operation; building the tool installs or starts nothing. Direct suspend
+notifications and optional session metadata remain later work. The full target
+architecture is in [DESIGN.md](DESIGN.md).
 
 ## Build and inspect devices
 
@@ -40,9 +42,9 @@ Do not point development runs at an installed collector's database.
 
 The collector needs read access to the selected `/dev/input/event*` nodes. It
 opens them read-only, never grabs them, and never falls back to the physical
-keyboard. Configure permissions explicitly when deploying; installation and
-permission management are not provided yet. Running as root is not required by
-the design.
+keyboard. The [systemd deployment guide](docs/systemd.md) provides installation
+steps and device-permission rules. The CLI itself does not install those rules
+or change permissions. Running as root is not required by the design.
 
 Selectors use exact names and refuse ambiguous matches. A missing or inaccessible
 device is recorded as unavailable while the other source can keep collecting.
@@ -221,8 +223,8 @@ An unfinished attempt after a crash remains unfinished; a snapshot published
 just before a crash may not yet appear in last-success state. Inspect and verify
 that artifact directly. Preflight failures (missing source, invalid paths, or lock
 contention) are reported on stderr before attempt state is updated. Diagnostics
-use stderr; successful commands emit JSON on stdout. A future systemd job will
-capture stderr in the journal.
+use stderr; successful commands emit JSON on stdout. The packaged systemd jobs
+send both streams to the journal when deployed.
 
 Seven successful daily snapshots remain the retention target. This command
 reports snapshot directory count and excess over seven, **but deletes nothing**:
@@ -232,9 +234,9 @@ Arrange manual cleanup only when no uploader or restore reader uses those files.
 Pre-migration snapshots and their separate expiry policy will be integrated when
 versioned schema migrations are introduced.
 
-This milestone does not install or schedule jobs. Until systemd packaging lands,
-backups run only on explicit invocation. The planned daily timer will be enabled
-by default on installation, with a destination override and explicit opt-out.
+The CLI does not install or schedule jobs. The [systemd installation flow](docs/systemd.md)
+enables a daily timer by default, with a destination override and explicit opt-out.
+Until that flow is carried out, backups run only on explicit invocation.
 
 To rehearse restoration, copy the **whole chosen snapshot** into a new private
 working directory; never open the published database for collection:
@@ -273,6 +275,13 @@ preservation. They do not read live input or alter
 the keyboard debouncer. Killing a test process verifies application-crash
 recovery; it does not simulate power loss or establish SSD flush behavior.
 
-Live-device access, real suspend/resume, one-second commit power cost, and
-long-duration collection still need verification on the host. The current
-execution environment exposes sysfs metadata but no `/dev/input` nodes.
+The systemd templates and device rules can be checked without deployment:
+
+```sh
+bash scripts/verify-packaging.sh
+```
+
+Runtime service permissions, reconnects, real suspend/resume, one-second commit
+power cost, and long-duration collection still need deployment validation. A prior
+foreground smoke test recorded normal keyboard/mouse activity successfully; it
+does not establish behavior under the packaged service sandbox.
