@@ -29,8 +29,8 @@ use umask 0077. The templates assume a home at `/home/<user>` available at boot;
 they wait for its backing mount. They do not discover alternate home paths or
 inherit shell XDG settings. `%h` cannot be used here: in the system manager it
 resolves to `/root` regardless of `User=`. See path overrides below for other homes.
-`ProtectHome=tmpfs` hides home directories; `BindPaths=` exposes only the Actmon
-directory as writable inside each service.
+`ProtectHome=tmpfs` hides `/home`, `/root`, and `/run/user`; `BindPaths=` exposes
+only the Actmon directory within those trees as writable inside each service.
 
 For Homekeep, select `.local/share/actmon/backups` only, after the first successful
 snapshot creates it. Do not select the Actmon parent. If a broader selection already
@@ -88,7 +88,7 @@ as one argument, including whitespace in device names and paths.
 For a first installation using the reviewed example names:
 
 ```sh
-install -d -m 0700 /home/invictus/.local/share/actmon
+sudo install -d -o invictus -g invictus -m 0700 /home/invictus/.local/share/actmon
 sudo install -m 0755 target/release/actmon /usr/local/bin/actmon
 sudo install -d -m 0755 /etc/actmon /etc/sysusers.d /etc/udev/rules.d
 sudo install -m 0644 packaging/sysusers/actmon.conf /etc/sysusers.d/actmon.conf
@@ -208,8 +208,11 @@ owned by `invictus` with mode 0700. In the appropriate service drop-ins, reset
 `BindPaths=/absolute/parent`. Reset `RequiresMountsFor=` in `[Unit]` and list the
 same parents there. Update the environment paths too. The backup job needs the
 database parent for SQLite WAL/SHM handling and the backup parent for sibling
-staging. Keep `ProtectHome=tmpfs` so other home data stays hidden. Resetting the
-old paths matters for alternate home layouts where `/home/<user>` does not exist.
+staging. Keep `ProtectHome=tmpfs`, but its hiding applies only to `/home`, `/root`,
+and `/run/user`. A home outside those trees is not hidden by that setting; such
+layouts need a separately reviewed sandbox configuration if equivalent isolation
+is required. Resetting the old paths matters for alternate home layouts where
+`/home/<user>` does not exist.
 Do not choose a mount point for the published directory if its sibling staging
 would land on another filesystem.
 
@@ -227,11 +230,41 @@ requires coordination with external readers.
 
 ## Upgrade or remove
 
-Before replacing a running binary, stop the timer and both services. Install the
-new binary/units, preserve local configuration and data, reload systemd, then
-restart the collector and timer (unless intentionally opted out). Run a manual
-backup and a restore verification after an upgrade. No schema migration is added
-by this packaging milestone.
+Before replacing a running binary, stop the timer and both services. Preserve local
+configuration and data. **The default data directory changed from
+`/var/lib/actmon/<user>` to `/home/<user>/.local/share/actmon`.** Existing installations
+must choose their paths before installing the new units and restarting:
+
+- **Keep existing storage:** explicitly set `ACTMON_DATABASE` and
+  `ACTMON_BACKUP_DIRECTORY` to the old locations in the environment file. Apply
+  the path overrides above to both services, replacing the default bind and mount
+  requirements with the existing parents. Environment overrides alone do not
+  change the sandbox. Homekeep still cannot select snapshots outside home.
+- **Move to home:** create the new bind source with explicit ownership before
+  starting either service:
+
+  ```sh
+  sudo install -d -o invictus -g invictus -m 0700 /home/invictus/.local/share/actmon
+  ```
+
+  With collection stopped, create and verify a final snapshot of the old database
+  using the README backup procedure. Follow the README restore rehearsal in a
+  separate working directory. Install the verified database into the new private
+  directory as `invictus`, without overwriting any existing database or pairing it
+  with old WAL/SHM/journal files. Preserve the old dataset and published snapshots
+  for rollback. Update any explicit environment overrides to the new paths and
+  verify historical coverage against the old database before restarting.
+
+Without the bind source, the new units cannot start. Creating an empty directory
+alone is not a history migration: the collector can initialize a fresh database,
+and new backups would omit the old history. These steps do not automatically move
+or delete any data; a first installation has no old dataset to migrate.
+
+Install the new binary/units, reload systemd, and restart the collector and timer
+(unless intentionally opted out) only after the chosen paths and data are ready.
+Confirm historical coverage and new samples, then run a manual backup and restore
+verification. Keep the old dataset until the transition has been verified. No
+schema migration is added by this packaging milestone.
 
 To stop deployment while preserving all recorded data:
 
