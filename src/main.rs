@@ -15,6 +15,26 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Publish a verified local snapshot. Does not schedule jobs or delete old snapshots.
+    Backup {
+        #[arg(long)]
+        database: PathBuf,
+        /// Dedicated published directory; upload this directory, not its parent.
+        #[arg(long)]
+        destination: PathBuf,
+        #[arg(long, default_value_t = 300, value_parser = clap::value_parser!(u64).range(1..=86400))]
+        timeout_seconds: u64,
+    },
+    /// Read local backup attempt/success metadata (does not reverify artifacts).
+    BackupStatus {
+        #[arg(long)]
+        destination: PathBuf,
+    },
+    /// Verify a copied snapshot before restoration, without modifying it.
+    VerifyBackup {
+        #[arg(long)]
+        snapshot: PathBuf,
+    },
     /// List input metadata without opening devices or recording input.
     Devices {
         #[arg(long, default_value = "/sys/class/input")]
@@ -53,6 +73,30 @@ fn main() -> Result<()> {
         .with_ansi(false)
         .init();
     match Cli::parse().command {
+        Command::Backup {
+            database,
+            destination,
+            timeout_seconds,
+        } => {
+            let stop = Arc::new(AtomicBool::new(false));
+            signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&stop))?;
+            signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&stop))?;
+            let result = actmon::backup::create(
+                &database,
+                &destination,
+                std::time::Duration::from_secs(timeout_seconds),
+                stop,
+            )?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        Command::BackupStatus { destination } => println!(
+            "{}",
+            serde_json::to_string_pretty(&actmon::backup::status(&destination)?)?
+        ),
+        Command::VerifyBackup { snapshot } => println!(
+            "{}",
+            serde_json::to_string_pretty(&actmon::backup::verify(&snapshot)?)?
+        ),
         Command::Devices {
             sysfs_root,
             device_root,

@@ -385,3 +385,21 @@ shutdown/crashes, and queue saturation. Live keyboard/mouse access, actual
 suspension, durable-commit energy cost, and SSD power-loss behavior remain
 unverified. The development environment has sysfs metadata but no input nodes;
 no running debouncer or installed collector was changed.
+
+## Local backup implementation status
+
+The second milestone adds `backup`, `backup-status`, and `verify-backup`.
+Snapshots use the existing rusqlite stack, incremental copying with a cooperative
+completion deadline, private sibling staging, integrity/foreign-key/application
+validation, SHA-256 manifests, synchronized files/directories, and atomic
+no-replacement publication. Mutable attempt state remains outside the upload root.
+A per-destination lock prevents overlapping jobs, and failures preserve earlier
+successful artifacts. Restoration tests use a separate copy after removing the
+original source and exercise both application reads and resumed writes.
+
+The seven-snapshot target is reported but not enforced by deletion: no external
+reader/cleanup contract has been established. Systemd scheduling and deployment
+remain the next milestone; manual commands do not enable automatic backups.
+Pre-migration snapshots will accompany future versioned schema migrations.
+See README.md for the exact directory contract, failure semantics, and restore
+procedure. No uploader integration or live service configuration is included.
