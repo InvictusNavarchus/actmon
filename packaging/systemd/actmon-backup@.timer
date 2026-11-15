@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily local Actmon snapshot for %i
+
+[Timer]
+OnCalendar=daily
+Persistent=yes
+RandomizedDelaySec=15min
+Unit=actmon-backup@%i.service
+
+[Install]
+WantedBy=timers.target

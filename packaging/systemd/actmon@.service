@@ -1,0 +1,37 @@
+[Unit]
+Description=Actmon input activity recorder for %i
+After=local-fs.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=%i
+SupplementaryGroups=actmon-input
+StateDirectory=actmon/%i
+StateDirectoryMode=0700
+UMask=0077
+Environment="ACTMON_DATABASE=%S/actmon/%i/activity.db"
+Environment="ACTMON_KEYBOARD_NAME=keyboard-debouncer"
+EnvironmentFile=/etc/actmon/%i.env
+ExecStart=/usr/local/bin/actmon collect --database ${ACTMON_DATABASE} --keyboard-name ${ACTMON_KEYBOARD_NAME} --mouse-name ${ACTMON_MOUSE_NAME}
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+CapabilityBoundingSet=
+DevicePolicy=closed
+DeviceAllow=char-input r
+
+[Install]
+WantedBy=multi-user.target
+Also=actmon-backup@%i.timer

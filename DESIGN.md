@@ -237,9 +237,14 @@ Do not assume WAL prevents all lock contention or disk-full failures.
 
 ## Service and permissions
 
-The proposed deployment is a systemd system service under a dedicated
-unprivileged account, with read access to selected input devices and write access
-to its data directory. It starts independently of KDE and restarts after failure.
+The selected deployment is a systemd system service under the existing unprivileged
+`invictus` account, so owner-only snapshots remain readable by the user's independent
+rclone job. This replaces the initially proposed dedicated service account without
+adding a backup export/ACL mechanism. A supplementary `actmon-input` group is assigned
+to the collector service, not added to the user's account globally. Udev rules grant
+that group read access to the selected virtual keyboard and mouse on recreation.
+It starts independently of KDE and restarts after failure; this account choice does
+not isolate the collector from other processes owned by the same user.
 Install-time permission configuration must cover device recreation. The running
 collector does not need exclusive grabs or unrestricted root privileges.
 
@@ -403,3 +408,20 @@ remain the next milestone; manual commands do not enable automatic backups.
 Pre-migration snapshots will accompany future versioned schema migrations.
 See README.md for the exact directory contract, failure semantics, and restore
 procedure. No uploader integration or live service configuration is included.
+
+## Systemd packaging status
+
+System service templates, a daily persistent backup timer, sysusers group creation,
+an environment-file example, and narrowly matched udev rule examples are provided
+under `packaging/`. Instance data defaults to `/var/lib/actmon/<user>` with mode 0700;
+the backup service has no real input devices. Collector failures restart with a
+bounded start rate, while a failed backup leaves collection running. The documented
+installation enables daily backups, supports timer masking as an explicit opt-out,
+and leaves rclone ownership/configuration unchanged.
+
+`scripts/verify-packaging.sh` validates units and rule syntax using disposable
+fixtures; it does not deploy them. See `docs/systemd.md` for installation, actual
+permission/coverage checks, recovery validation, path overrides, and removal.
+Service sandbox behavior, SELinux access, reconnects, and suspend/resume still need
+an approved deployment test. Snapshot pruning and pre-migration integration remain
+separate work. Preparing this milestone does not install or start live services.
