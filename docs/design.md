@@ -8,7 +8,11 @@ presence, intent, or whether an application responded.
 
 This document captures the agreed direction as of 2026-11-15. Implementation
 choices and verification requirements below are proposals within that direction,
-not claims about an existing implementation.
+not claims about an existing implementation. The status sections at the end record
+implementation milestones. For current behavior, see the
+[collector architecture](architecture.md), [data model](data-model.md),
+[backups guide](backups.md), and
+[systemd deployment guide](systemd.md).
 
 ## Decisions
 
@@ -361,7 +365,9 @@ above. Actmon development does not include changing or deploying Batmon.
 The first implementation milestone provides collect, devices, and status
 commands, raw evdev classification, monotonic timestamps, interval aggregation,
 coverage invalidation, a bounded writer queue, and versioned SQLite storage with
-FULL commits. See README.md for executable behavior and query examples.
+FULL commits. See the [README](../README.md) for basic usage, the
+[collector architecture](architecture.md) for implemented behavior, and the
+[data model](data-model.md) for query examples.
 
 Concrete choices for this milestone are:
 
@@ -408,22 +414,25 @@ reader/cleanup contract has been established. The systemd packaging described
 below now supplies daily scheduling and deployment instructions. Installation
 remains an explicit operation; manual backup commands do not enable the timer.
 Pre-migration snapshots will accompany future versioned schema migrations.
-See README.md for the exact directory contract, failure semantics, and restore
-procedure. No uploader integration or live service configuration is included.
+See [backups and recovery](backups.md) for the exact directory contract, failure
+semantics, and restore procedure. No uploader integration or live service
+configuration is included.
 
 ## Systemd packaging status
 
 System service templates, a daily persistent backup timer, sysusers group creation,
 an environment-file example, and narrowly matched udev rule examples are provided
-under `packaging/`. Instance data defaults to `/home/<user>/.local/share/actmon` with mode 0700;
-the backup service has no real input devices. Collector failures restart with a
-bounded start rate, while a failed backup leaves collection running. The documented
+under [`packaging/`](../packaging/). Instance data defaults to
+`/home/<user>/.local/share/actmon` with mode 0700; the backup service has no real
+input devices. Collector failures restart with a bounded start rate, while a
+failed backup leaves collection running. The documented
 installation enables daily backups, supports timer masking as an explicit opt-out,
 and leaves rclone ownership/configuration unchanged.
 
-`scripts/verify-packaging.sh` validates units and rule syntax using disposable
-fixtures; it does not deploy them. See `docs/systemd.md` for installation, actual
-permission/coverage checks, recovery validation, path overrides, and removal.
+[`scripts/verify-packaging.sh`](../scripts/verify-packaging.sh) validates units and
+rule syntax using disposable fixtures; it does not deploy them. See
+[systemd deployment](systemd.md) for installation, actual permission/coverage checks,
+recovery validation, path overrides, and removal.
 Service sandbox behavior, SELinux access, reconnects, and suspend/resume still need
 an approved deployment test. Snapshot pruning and pre-migration integration remain
 separate work. Preparing this milestone does not install or start live services.

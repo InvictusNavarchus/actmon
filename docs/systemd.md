@@ -164,7 +164,8 @@ Confirm available coverage for all supported sources, increasing timestamps, a
 verified local snapshot, and a scheduled next timer run. A running collector with
 unavailable devices is not proof of healthy input collection. The oneshot job
 normally becomes inactive after success; use its exit result and backup status.
-Follow the README restore rehearsal on a separate copy of the published artifact.
+Follow the [restore rehearsal](backups.md#restore-rehearsal) on a separate copy of
+the published artifact.
 
 The timer runs around local midnight, with up to 15 minutes randomized delay.
 `Persistent=yes` provides one catch-up activation when a scheduled run was missed
@@ -248,11 +249,12 @@ must choose their paths before installing the new units and restarting:
   ```
 
   With collection stopped, create and verify a final snapshot of the old database
-  using the README backup procedure. Follow the README restore rehearsal in a
-  separate working directory. Install the verified database into the new private
-  directory as `invictus`, without overwriting any existing database or pairing it
-  with old WAL/SHM/journal files. Preserve the old dataset and published snapshots
-  for rollback. Update any explicit environment overrides to the new paths and
+  using the [backup procedure](backups.md#create-a-snapshot). Follow the
+  [restore rehearsal](backups.md#restore-rehearsal) in a separate working directory.
+  Install the verified database into the new private directory as `invictus`, without
+  overwriting any existing database or pairing it with old WAL/SHM/journal files.
+  Preserve the old dataset and published snapshots for rollback. Update any
+  explicit environment overrides to the new paths and
   verify historical coverage against the old database before restarting.
 
 Without the bind source, the new units cannot start. Creating an empty directory

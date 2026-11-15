@@ -1,35 +1,34 @@
 # Actmon
 
-Actmon records Linux keyboard and mouse activity in SQLite for investigations
-alongside Batmon and the system journal. It preserves one-second measurements
-permanently, including collection coverage and first/last event timing. It does
-not persist key identities, typed text, or pointer coordinates.
+Actmon records Linux keyboard and mouse activity in a local SQLite database to
+help investigate computer usage, inactivity, slowdowns, and failures alongside
+Batmon and the system journal.
 
-The collector, verified local backup commands, and systemd deployment templates
-are implemented. See [systemd deployment](docs/systemd.md) for reviewed installation,
-device permissions, daily scheduling, and opt-out instructions. Service data defaults
-to `/home/<user>/.local/share/actmon`; select only its `backups` folder in Homekeep. Deployment is an
-explicit operation; building the tool installs or starts nothing. Direct suspend
-notifications and optional session metadata remain later work. The full target
-architecture is in [DESIGN.md](DESIGN.md).
+It keeps one-second summaries of key presses, mouse clicks, movement, and scrolling,
+including first/last event timing and collection coverage. History is retained
+permanently. It does not persist typed text, key identities, or pointer coordinates.
 
-## Build and inspect devices
+Recorded activity does not establish human presence or whether an application
+responded. Missing or incomplete collection coverage must not be read as inactivity.
+
+## Getting started
 
 Requires Linux, Rust 1.89 or newer, and a C compiler for bundled SQLite.
+Building Actmon does not install or start services.
+
+### Build and find your devices
 
 ```sh
 cargo build --locked --release
 ./target/release/actmon devices
 ```
 
-Device discovery reads `/sys/class/input` metadata and prints JSON with the exact
-name, event node, and sysfs identity. It does not open input devices or collect
-input. Device names can contain trailing spaces; preserve them in selectors.
+The device listing prints JSON metadata without opening input devices or recording
+input. Choose the exact mouse name, preserving any trailing spaces.
 
-## Record activity
+### Record activity
 
-Choose the mouse name from the device listing. The default keyboard selector is
-the virtual device named `keyboard-debouncer`. For example:
+Replace the database path and mouse name below with your own values:
 
 ```sh
 ./target/release/actmon collect \
@@ -37,135 +36,36 @@ the virtual device named `keyboard-debouncer`. For example:
   --mouse-name 'USB Optical Mouse '
 ```
 
-The database path is required. The collector creates its parent directory when
-needed. SIGINT or SIGTERM requests an orderly stop and drains queued writes.
-Do not point development runs at an installed collector's database.
+The keyboard defaults to the virtual device named `keyboard-debouncer`; use
+`--keyboard-name` to select a different exact name. Ambiguous matches are refused.
+The collector needs read access to the selected `/dev/input/event*` nodes and never
+grabs devices exclusively. It does not change device permissions or fall back to
+the physical keyboard when the selected keyboard is unavailable.
 
-The collector needs read access to the selected `/dev/input/event*` nodes. It
-opens them read-only, never grabs them, and never falls back to the physical
-keyboard. The [systemd deployment guide](docs/systemd.md) provides installation
-steps and device-permission rules. The CLI itself does not install those rules
-or change permissions. Running as root is not required by the design.
+The database path is required; its parent directory is created when needed.
+Use a separate database for development runs. Press Ctrl+C to stop cleanly and
+drain queued writes. Missing or inaccessible devices are recorded as unavailable
+while the other source can keep collecting.
 
-Selectors use exact names and refuse ambiguous matches. A missing or inaccessible
-device is recorded as unavailable while the other source can keep collecting.
-Hotplug discovery scans sysfs every two seconds and retries unavailable devices;
-this first milestone uses periodic discovery rather than a udev monitor. Discovery
-failures are reported separately and retried while existing readers continue;
-reader errors still close the affected source. Recreated virtual devices are
-reopened. There may be an unobserved period before discovery.
+For device permissions and collection as a system service, follow the
+[systemd deployment guide](docs/systemd.md). Service data defaults to
+`/home/<user>/.local/share/actmon`; the installation flow enables daily backups
+with an explicit opt-out.
 
-The collector holds an advisory lock next to the database to reject a second
-Actmon collector targeting the same resolved path. The lock file is persistent;
-the kernel releases its lock when a process exits. SQLite itself does not enforce
-this application-level single-collector policy against unrelated writers.
-
-Use `RUST_LOG=actmon=debug` to include transaction latency diagnostics on stderr.
-Structured error messages contain source metadata, not input contents.
-
-## Read status and measurements
+### Check status
 
 ```sh
 ./target/release/actmon status --database /path/to/actmon/activity.db
-sqlite3 -readonly /path/to/actmon/activity.db
 ```
 
-Status opens an existing database read-only and reports the newest run's latest
-persisted interval and commit metadata. It does not create or migrate a database.
-An absent orderly-stop timestamp does not prove that the collector is still
-running: the process may have crashed. Check commit age and journal evidence.
+Status reads an existing database and reports the latest persisted interval and
+commit metadata as JSON. It does not prove the collector is still running; check
+freshness and journal evidence. See [data model and queries](docs/data-model.md)
+for interpreting coverage and inspecting measurements with SQL.
 
-Times use integer microseconds. `start_utc_us` is a UTC mapping of interval start;
-`start_mono_us` uses Linux CLOCK_MONOTONIC. Intervals are half-open and normally
-1,000,000 microseconds. First/last fields are offsets from interval start; add them
-to `start_utc_us` for UTC endpoints. Runs retain boot identity, program version,
-and effective source configuration. Source connection events retain node and
-sysfs metadata.
+## Backups
 
-Coverage masks use these bits:
-
-| Bit | Category |
-| --- | --- |
-| 1 | Keyboard |
-| 2 | Mouse buttons |
-| 4 | Relative motion |
-| 8 | Wheel scrolling |
-
-`available_mask` identifies categories available for the entire interval.
-`incomplete_mask` marks known loss or partial observation. A category's zero
-count is evidence of observed inactivity only if its available bit is set and
-its incomplete bit is clear. Queries must apply both conditions. Capability
-absence, missing devices, and disabled categories are not healthy zero activity.
-
-For example, inspect only complete keyboard intervals from the latest hour:
-
-```sql
-SELECT datetime(start_utc_us / 1000000, 'unixepoch') AS utc,
-       key_downs, key_repeats, key_first_us, key_last_us
-FROM intervals
-WHERE start_utc_us >= (unixepoch('now') - 3600) * 1000000
-  AND (available_mask & 1) = 1
-  AND (incomplete_mask & 1) = 0
-ORDER BY id;
-```
-
-Keyboard releases do not increment key-down counts. `key_repeats` is NULL when
-repeat reporting is not advertised and no repeats were observed; it is not an
-estimate of compositor-generated repeat. Mouse button columns follow Linux's
-left, right, middle, side, extra, forward, back, and task button codes.
-
-`moved` means nonzero relative X/Y motion occurred, not a full second of movement.
-Wheel amounts use units of 1/120 nominal detent; legacy wheel steps are multiplied
-by 120. High-resolution axes take precedence over duplicate legacy axes, per
-axis. Up/down and right/left remain separate, so opposing scrolls do not cancel.
-These values do not measure application pixels or lines.
-
-## Coverage and durability
-
-Input is captured independently of the SQLite writer. A one-second grace period
-allows delayed boundary events to arrive before an interval is finalized.
-Normally roughly one to two seconds remain in aggregation before being queued;
-writer delay can add to that. Already-finalized intervals receiving late input
-are conservatively marked incomplete rather than silently moving old input into
-the current second.
-
-Loss ranges also apply to intervals created or inserted in later batches. Source
-coverage changes at exact interval boundaries do not create artificial partial
-intervals. Loss and disconnect events only affect the source's supported
-categories. Shutdown invalidates the unread tail since each source's last
-successful drain, including any full interval crossed by that tail.
-
-Raw evdev mode exposes SYN_DROPPED directly. The decoder ignores events through
-the next SYN_REPORT, does not synthesize replacement keypresses, and marks the
-potentially affected range incomplete. It conservatively includes the period
-since the previous drained read. Clock changes, detected suspension through
-CLOCK_BOOTTIME comparison, and scheduling gaps over two seconds reset interval
-continuity and leave explicit gaps. These clock observations do not identify a
-specific suspend cause or replace system journal evidence.
-
-WAL with `synchronous=FULL` synchronizes completed transactions. Measurements
-still in memory are not durable. The capture-to-writer queue holds 120 batches;
-it is not a guaranteed number of seconds. Persistent write failures retry every
-250 ms with a 250 ms SQLite busy timeout. When the queue fills, dropped batches
-become an explicit loss range on the next accepted batch. Shutdown ends failed
-write retries; storage failure at exit can leave only a journal explanation and
-an unexplained database gap.
-
-The latest commit timestamp is sampled before its successful transaction, so it
-is an approximate freshness indicator. `latest_capture_to_commit_us` retains
-the newest interval's measured age at the start of the transaction that inserted
-it, excluding the commit itself. Event-only commits preserve this measurement
-and its association with `latest_interval_utc_us`; it is not a continuously
-updated age or a measurement of the event-only commit.
-`previous_commit_latency_us` retains the preceding transaction's measured cost
-without adding a second synchronization per batch. If a retry establishes that
-an uncertain commit persisted, the next batch records that latency as NULL rather
-than reusing an older transaction's timing. The recovery is logged separately.
-No heartbeat or timestamp proves uninterrupted collection or power-loss recovery.
-
-## Local snapshots and recovery
-
-Create a snapshot while the collector continues running:
+Create a verified local snapshot while the collector continues running:
 
 ```sh
 ./target/release/actmon backup \
@@ -174,115 +74,25 @@ Create a snapshot while the collector continues running:
 ./target/release/actmon backup-status --destination /path/to/actmon/backups
 ```
 
-The destination's parent must already exist. Actmon creates the destination and
-its sibling `.backups.actmon-backup` control directory with mode 0700; existing
-ones must be private real directories, not symlinks. Use a dedicated destination
-for one canonical database path. Its parent must be trusted and writable by the
-backup user. A destination containing the live database is refused. Staging and
-publication must be on the same local filesystem; cross-device publication fails
-without falling back to copying into the published directory.
+The destination's parent must already exist. Use a dedicated backup directory;
+Actmon creates private snapshot and control directories beneath that parent.
+**Upload only the published `backups/` directory**, not its parent or live database.
+For Homekeep, select only that published directory. Actmon does not configure uploads.
 
-**Upload only the published `backups/` directory**, not its parent. The sibling
-control directory contains the lock, attempt state, and temporary staging. No
-rclone configuration or cloud interaction is performed by Actmon.
+Manual commands do not schedule backups, and old snapshots are not automatically
+deleted. See [backups and recovery](docs/backups.md) for destination requirements,
+verification, restoration, and retention.
 
-Each successful invocation publishes a unique `snapshot-*/` directory containing:
+## Documentation
 
-- `activity.db`: a standalone snapshot including committed WAL data, converted to
-  DELETE journal mode so it needs no WAL/SHM sidecars. Collector configuration,
-  boot IDs, and collector versions remain in its `runs` records.
-- `manifest.json`: format/schema and tool/SQLite versions, source path, validation
-  timestamp, database size, SHA-256 checksum, and interval count/time bounds.
-  Time bounds do not imply continuous or complete input coverage; consult the
-  interval masks and events inside the snapshot.
-
-The command uses incremental SQLite Online Backup steps, validates identity,
-`integrity_check`, foreign keys, and application reads, then synchronizes files
-and directories and publishes with a no-replacement atomic rename. Published
-artifacts are never edited. Source writes may restart copying; the snapshot is
-not promised to represent the invocation's start time. Checksums detect corruption,
-not malicious replacement of both the database and manifest.
-
-`--timeout-seconds` defaults to 300 (allowed range 1–86400). The deadline and
-SIGINT/SIGTERM are checked between copy/hash steps and during SQLite validation.
-They are cooperative limits: an individual filesystem operation, flush, or SQLite
-step can exceed them. The last cancellation/deadline check is immediately before
-publication begins. Cancellation observed before that boundary exits nonzero,
-preserves earlier snapshots, and cleans only its own staging. Once publication
-begins, Actmon completes directory synchronization and records the outcome even
-if cancellation or the deadline arrives meanwhile; successful publication remains
-a success. Actual publication, synchronization, or state-write failures still exit
-nonzero. A hard kill can leave staging behind;
-Actmon does not automatically remove unknown stale directories. A sync failure
-after rename leaves the complete visible artifact in place and reports uncertain
-publication durability. There is no power-loss hardware guarantee from these tests.
-
-A per-destination lock rejects overlapping jobs. `backup-status` distinguishes
-last attempt, its finish/error, and the last verified local publication with age
-and coverage. It reads metadata without rechecking snapshots or cloud state.
-An unfinished attempt after a crash remains unfinished; a snapshot published
-just before a crash may not yet appear in last-success state. Inspect and verify
-that artifact directly. Preflight failures (missing source, invalid paths, or lock
-contention) are reported on stderr before attempt state is updated. Diagnostics
-use stderr; successful commands emit JSON on stdout. The packaged systemd jobs
-send both streams to the journal when deployed.
-
-Seven successful daily snapshots remain the retention target. This command
-reports snapshot directory count and excess over seven, **but deletes nothing**:
-there is no reader/cleanup coordination contract with the independent uploader.
-Repeated manual invocations create additional snapshots, even on the same day.
-Arrange manual cleanup only when no uploader or restore reader uses those files.
-Pre-migration snapshots and their separate expiry policy will be integrated when
-versioned schema migrations are introduced.
-
-The CLI does not install or schedule jobs. The [systemd installation flow](docs/systemd.md)
-enables a daily timer by default, with a destination override and explicit opt-out.
-Until that flow is carried out, backups run only on explicit invocation.
-
-To rehearse restoration, copy the **whole chosen snapshot** into a new private
-working directory; never open the published database for collection:
-
-```sh
-mkdir -m 700 /path/to/restore-test
-cp /path/to/actmon/backups/snapshot-EXAMPLE/activity.db /path/to/restore-test/
-cp /path/to/actmon/backups/snapshot-EXAMPLE/manifest.json /path/to/restore-test/
-./target/release/actmon verify-backup --snapshot /path/to/restore-test
-./target/release/actmon status --database /path/to/restore-test/activity.db
-```
-
-Verification rejects missing files, symlinked payloads, checksum/size mismatches,
-SQLite sidecars, unsupported identities, corruption, foreign-key violations, and
-coverage metadata mismatches. Keep the published snapshot unchanged. Once the
-restored working database receives writes, its original manifest no longer matches.
-Live replacement is a separate operation: stop writers, preserve the old dataset,
-and never pair the restored database with old WAL/SHM/journal files. Local
-verification does not establish that an off-device upload completed.
-
-## Development and verification
-
-```sh
-cargo check --locked
-cargo test --locked
-cargo clippy --locked --all-targets -- -D warnings
-cargo fmt --check
-```
-
-Tests use temporary databases and synthetic events or fixture metadata. They
-exercise classification, wheel deduplication, boundaries, gaps, late arrivals,
-queue saturation, transaction rollback and retry identity, collector locking,
-orderly shutdown, abrupt process exits, live-WAL snapshots, restoration without
-the original database, backup failures, publication collisions, and retention
-preservation. They do not read live input or alter
-the keyboard debouncer. Killing a test process verifies application-crash
-recovery; it does not simulate power loss or establish SSD flush behavior.
-
-The systemd templates and device rules can be checked without deployment:
-
-```sh
-bash scripts/verify-packaging.sh
-```
-
-Runtime service permissions, reconnects, real suspend/resume, one-second commit
-power cost, and long-duration collection still need deployment validation. A prior
-foreground smoke test recorded normal keyboard/mouse activity successfully; it
-does not establish behavior under the packaged service sandbox.
+- [Systemd deployment](docs/systemd.md): installation, device permissions, scheduling,
+  upgrades, and removal.
+- [Data model and queries](docs/data-model.md): timestamps, measurement definitions,
+  coverage masks, and SQL examples.
+- [Collector architecture](docs/architecture.md): device recovery, aggregation,
+  loss handling, and durability.
+- [Backups and recovery](docs/backups.md): snapshot creation, validation, status,
+  restoration, and retention.
+- [Development and verification](docs/development.md): checks, test coverage, and
+  remaining deployment validation.
+- [Design](docs/design.md): intended direction, rationale, and implementation milestones.
