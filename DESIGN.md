@@ -382,14 +382,15 @@ Concrete choices for this milestone are:
 - Persist first/last event timestamps as offsets from interval start. Wheel values
   use 1/120 nominal detent units, with high-resolution reporting taking precedence
   over legacy events independently for each axis.
-- Require an explicit database path. Service paths, deployed device permissions,
-  automatic backups, and safe backup rotation remain subsequent milestones.
+- Require an explicit database path. The later backup and systemd packaging
+  milestones below provide snapshots, service paths, device-permission rules,
+  and daily scheduling. Live deployment and safe backup rotation remain pending.
 
 Tests exercise synthetic events, temporary databases, metadata fixtures, process
-shutdown/crashes, and queue saturation. Live keyboard/mouse access, actual
-suspension, durable-commit energy cost, and SSD power-loss behavior remain
-unverified. The development environment has sysfs metadata but no input nodes;
-no running debouncer or installed collector was changed.
+shutdown/crashes, and queue saturation. A subsequent foreground smoke test recorded
+live keyboard/mouse activity through the debouncer and mouse. Actual suspension,
+service sandbox access, durable-commit energy cost, and SSD power-loss behavior
+remain unverified; packaging alone does not establish these runtime properties.
 
 ## Local backup implementation status
 
@@ -403,8 +404,9 @@ successful artifacts. Restoration tests use a separate copy after removing the
 original source and exercise both application reads and resumed writes.
 
 The seven-snapshot target is reported but not enforced by deletion: no external
-reader/cleanup contract has been established. Systemd scheduling and deployment
-remain the next milestone; manual commands do not enable automatic backups.
+reader/cleanup contract has been established. The systemd packaging described
+below now supplies daily scheduling and deployment instructions. Installation
+remains an explicit operation; manual backup commands do not enable the timer.
 Pre-migration snapshots will accompany future versioned schema migrations.
 See README.md for the exact directory contract, failure semantics, and restore
 procedure. No uploader integration or live service configuration is included.

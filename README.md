@@ -42,9 +42,9 @@ Do not point development runs at an installed collector's database.
 
 The collector needs read access to the selected `/dev/input/event*` nodes. It
 opens them read-only, never grabs them, and never falls back to the physical
-keyboard. Configure permissions explicitly when deploying; installation and
-permission management are not provided yet. Running as root is not required by
-the design.
+keyboard. The [systemd deployment guide](docs/systemd.md) provides installation
+steps and device-permission rules. The CLI itself does not install those rules
+or change permissions. Running as root is not required by the design.
 
 Selectors use exact names and refuse ambiguous matches. A missing or inaccessible
 device is recorded as unavailable while the other source can keep collecting.
@@ -223,8 +223,8 @@ An unfinished attempt after a crash remains unfinished; a snapshot published
 just before a crash may not yet appear in last-success state. Inspect and verify
 that artifact directly. Preflight failures (missing source, invalid paths, or lock
 contention) are reported on stderr before attempt state is updated. Diagnostics
-use stderr; successful commands emit JSON on stdout. A future systemd job will
-capture stderr in the journal.
+use stderr; successful commands emit JSON on stdout. The packaged systemd jobs
+send both streams to the journal when deployed.
 
 Seven successful daily snapshots remain the retention target. This command
 reports snapshot directory count and excess over seven, **but deletes nothing**:

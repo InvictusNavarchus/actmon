@@ -31,10 +31,17 @@ The collector receives `actmon-input` through `SupplementaryGroups=`. The user
 is not added to that group globally, and the backup service does not receive it.
 The example udev rules assign group `actmon-input` and mode 0640 only to event
 nodes named `keyboard-debouncer` and `USB Optical Mouse ` (trailing space).
-Rules follow device recreation rather than hard-coding event numbers. They do
-change those nodes' existing group permissions: other tools relying on membership
+Rules follow device recreation rather than hard-coding event numbers. The grant
+covers every node with a matching name, not a uniquely identified physical unit.
+If duplicate names appear, all matching nodes receive group access but the
+collector refuses ambiguous selection. Neither of the current devices provides a
+unique serial identifier. Port matching could narrow the physical mouse grant,
+but would bind access to that port and would not resolve the collector's name
+ambiguity. Richer identity selection needs coordinated collector and rule support.
+These examples do change matching nodes' existing group permissions: other tools relying on membership
 in `input` to read these specific nodes may need their own access arrangement.
-Physical keyboards and `/dev/uinput` are not matched. The existing debouncer
+The current physical keyboard names and `/dev/uinput` do not match these rules;
+a device deliberately using a configured name would match. The existing debouncer
 service and its input/uinput permissions are left unchanged.
 
 The collector still refuses ambiguous names and never grabs a device. No hard
