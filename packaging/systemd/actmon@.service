@@ -1,4 +1,5 @@
 [Unit]
+RequiresMountsFor=/home/%i/.local/share/actmon
 Description=Actmon input activity recorder for %i
 After=local-fs.target
 StartLimitIntervalSec=60
@@ -8,10 +9,8 @@ StartLimitBurst=5
 Type=exec
 User=%i
 SupplementaryGroups=actmon-input
-StateDirectory=actmon/%i
-StateDirectoryMode=0700
 UMask=0077
-Environment="ACTMON_DATABASE=%S/actmon/%i/activity.db"
+Environment="ACTMON_DATABASE=/home/%i/.local/share/actmon/activity.db"
 Environment="ACTMON_KEYBOARD_NAME=keyboard-debouncer"
 EnvironmentFile=/etc/actmon/%i.env
 ExecStart=/usr/local/bin/actmon collect --database ${ACTMON_DATABASE} --keyboard-name ${ACTMON_KEYBOARD_NAME} --mouse-name ${ACTMON_MOUSE_NAME}
@@ -22,7 +21,8 @@ StandardOutput=journal
 StandardError=journal
 NoNewPrivileges=yes
 ProtectSystem=strict
-ProtectHome=yes
+ProtectHome=tmpfs
+BindPaths=/home/%i/.local/share/actmon
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

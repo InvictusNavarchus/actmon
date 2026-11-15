@@ -7,7 +7,8 @@ not persist key identities, typed text, or pointer coordinates.
 
 The collector, verified local backup commands, and systemd deployment templates
 are implemented. See [systemd deployment](docs/systemd.md) for reviewed installation,
-device permissions, daily scheduling, and opt-out instructions. Deployment is an
+device permissions, daily scheduling, and opt-out instructions. Service data defaults
+to `/home/<user>/.local/share/actmon`; select only its `backups` folder in Homekeep. Deployment is an
 explicit operation; building the tool installs or starts nothing. Direct suspend
 notifications and optional session metadata remain later work. The full target
 architecture is in [DESIGN.md](DESIGN.md).

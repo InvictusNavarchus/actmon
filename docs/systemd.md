@@ -10,22 +10,33 @@ The templates target Linux with systemd; offline validation used Fedora's system
 Use the existing `invictus` account via the system manager, not `systemctl --user`.
 `actmon@invictus.service` starts at boot independently of KDE, login, or lingering.
 The account choice keeps the owner-only database and snapshots readable by your
-existing rclone job without ACL export machinery. It is not a security boundary
+existing Homekeep job without ACL export machinery. It is not a security boundary
 against other processes running as your own user.
 
 | Item | Default |
 | --- | --- |
 | Binary | `/usr/local/bin/actmon` |
 | Configuration | `/etc/actmon/invictus.env` |
-| Live database | `/var/lib/actmon/invictus/activity.db` |
-| Published snapshots (rclone source) | `/var/lib/actmon/invictus/backups/` |
-| Private backup state/staging | `/var/lib/actmon/invictus/.backups.actmon-backup/` |
+| Live database | `/home/invictus/.local/share/actmon/activity.db` |
+| Published snapshots (Homekeep source) | `/home/invictus/.local/share/actmon/backups/` |
+| Private backup state/staging | `/home/invictus/.local/share/actmon/.backups.actmon-backup/` |
 | Collector | `actmon@invictus.service` |
 | Daily timer | `actmon-backup@invictus.timer` |
 | Backup job | `actmon-backup@invictus.service` |
 
-Systemd creates the instance's data directory as its user with mode 0700; both
-jobs use umask 0077. Only upload the published directory, not its parent.
+Installation creates the data directory as its user with mode 0700; both jobs
+use umask 0077. The templates assume a home at `/home/<user>` available at boot;
+they wait for its backing mount. They do not discover alternate home paths or
+inherit shell XDG settings. `%h` cannot be used here: in the system manager it
+resolves to `/root` regardless of `User=`. See path overrides below for other homes.
+`ProtectHome=tmpfs` hides home directories; `BindPaths=` exposes only the Actmon
+directory as writable inside each service.
+
+For Homekeep, select `.local/share/actmon/backups` only, after the first successful
+snapshot creates it. Do not select the Actmon parent. If a broader selection already
+includes it, exclude `/.local/share/actmon/activity.db*` and
+`/.local/share/actmon/.backups.actmon-backup/**` so live SQLite files and private
+staging are not uploaded. Homekeep configuration remains a separate operation.
 
 The collector receives `actmon-input` through `SupplementaryGroups=`. The user
 is not added to that group globally, and the backup service does not receive it.
@@ -77,6 +88,7 @@ as one argument, including whitespace in device names and paths.
 For a first installation using the reviewed example names:
 
 ```sh
+install -d -m 0700 /home/invictus/.local/share/actmon
 sudo install -m 0755 target/release/actmon /usr/local/bin/actmon
 sudo install -d -m 0755 /etc/actmon /etc/sysusers.d /etc/udev/rules.d
 sudo install -m 0644 packaging/sysusers/actmon.conf /etc/sysusers.d/actmon.conf
@@ -140,10 +152,10 @@ Masking the timer does not prevent an explicitly requested manual backup job.
 After several seconds of normal input:
 
 ```sh
-actmon status --database /var/lib/actmon/invictus/activity.db
+actmon status --database /home/invictus/.local/share/actmon/activity.db
 systemctl show actmon@invictus.service -p User -p SupplementaryGroups -p MainPID -p NRestarts
 sudo systemctl start actmon-backup@invictus.service
-actmon backup-status --destination /var/lib/actmon/invictus/backups
+actmon backup-status --destination /home/invictus/.local/share/actmon/backups
 systemctl list-timers actmon-backup@invictus.timer
 journalctl -u actmon-backup@invictus.service -n 50 --no-pager
 ```
@@ -183,19 +195,21 @@ to measure resource cost before considering durability or cadence changes.
 
 Edit `/etc/actmon/invictus.env` to set `ACTMON_DATABASE` or
 `ACTMON_BACKUP_DIRECTORY`. Both must be absolute paths. Paths inside
-`/var/lib/actmon/invictus` are already writable. A destination's parent must exist;
+`/home/invictus/.local/share/actmon` are already writable. A destination's parent must exist;
 the backup command creates its final private directory and sibling control path.
 The same environment file is read by both jobs; changes take effect on their next
 start (restart the collector after editing). Configuration changes do not migrate
 existing history or snapshots. Keep the existing data until a separate migration
 has been verified.
 
-For storage outside the default state directory, pre-create the required parent
-owned by `invictus` with mode 0700 and add `ReadWritePaths=/absolute/parent` and
-`RequiresMountsFor=/absolute/parent` in the appropriate service drop-ins. The backup
-job needs access to the database parent for SQLite WAL/SHM handling and to the
-backup parent for sibling staging. Both services have `ProtectHome=yes`; prefer a
-local `/srv` or `/var/lib` location rather than silently weakening that protection.
+For storage outside the default data directory, pre-create the required parent
+owned by `invictus` with mode 0700. In the appropriate service drop-ins, reset
+`BindPaths=` in `[Service]` and list each required parent with
+`BindPaths=/absolute/parent`. Reset `RequiresMountsFor=` in `[Unit]` and list the
+same parents there. Update the environment paths too. The backup job needs the
+database parent for SQLite WAL/SHM handling and the backup parent for sibling
+staging. Keep `ProtectHome=tmpfs` so other home data stays hidden. Resetting the
+old paths matters for alternate home layouts where `/home/<user>` does not exist.
 Do not choose a mount point for the published directory if its sibling staging
 would land on another filesystem.
 

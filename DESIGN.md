@@ -415,7 +415,7 @@ procedure. No uploader integration or live service configuration is included.
 
 System service templates, a daily persistent backup timer, sysusers group creation,
 an environment-file example, and narrowly matched udev rule examples are provided
-under `packaging/`. Instance data defaults to `/var/lib/actmon/<user>` with mode 0700;
+under `packaging/`. Instance data defaults to `/home/<user>/.local/share/actmon` with mode 0700;
 the backup service has no real input devices. Collector failures restart with a
 bounded start rate, while a failed backup leaves collection running. The documented
 installation enables daily backups, supports timer masking as an explicit opt-out,
