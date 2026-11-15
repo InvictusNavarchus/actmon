@@ -20,7 +20,8 @@ fn summary_supports_text_json_and_local_midnight_without_writing() {
     let text = String::from_utf8(output.stdout).unwrap();
     assert!(text.contains("No recorded intervals"));
     assert!(text.contains("Idle after 300s"));
-    assert!(text.contains("+07:00"));
+    assert!(text.contains("Timezone: UTC+07:00"));
+    assert_eq!(text.matches("+07:00").count(), 1);
     let output = Command::new(env!("CARGO_BIN_EXE_actmon"))
         .env("TZ", "UTC")
         .args(["summary", "--database"])

@@ -79,8 +79,10 @@ meaning and limits of commit timing fields and freshness indicators.
 read transaction, including committed WAL data. It reports local midnight to the
 time the command started, using the process's local timezone (including `TZ` when
 set). Text is the default; `--json` provides RFC 3339 timestamps with UTC offsets
-and integer microsecond durations. Hour labels include offsets to distinguish
-repeated hours during daylight saving transitions. A nonexistent local midnight
+and integer microsecond durations. Text shows the date and UTC offset once in the
+header, with time-only labels throughout the report. If the offset changes during
+the day, the header shows the starting and ending offsets; JSON retains offsets
+on each timestamp to distinguish repeated hours. A nonexistent local midnight
 produces an explicit error rather than guessing a boundary.
 
 Input totals include key downs, separately observed repeats, all recorded mouse

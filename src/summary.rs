@@ -465,10 +465,19 @@ fn display_time(value: &str, format: &str) -> String {
 
 impl Summary {
     pub fn render(&self) -> String {
+        let start_offset = display_time(&self.start, "%:z");
+        let end_offset = display_time(&self.end, "%:z");
+        let timezone = if start_offset == end_offset {
+            format!("UTC{start_offset}")
+        } else {
+            format!("UTC{start_offset} to UTC{end_offset}")
+        };
         let mut text = format!(
-            "Activity summary: {} to {}\nDatabase: {}\n",
-            display_time(&self.start, "%Y-%m-%d %H:%M:%S %:z"),
-            display_time(&self.end, "%Y-%m-%d %H:%M:%S %:z"),
+            "Activity summary: {}, {} to {}\nTimezone: {}\nDatabase: {}\n",
+            display_time(&self.start, "%Y-%m-%d"),
+            display_time(&self.start, "%H:%M:%S"),
+            display_time(&self.end, "%H:%M:%S"),
+            timezone,
             self.database
         );
         if self.recorded_intervals == 0 {
@@ -493,11 +502,11 @@ impl Summary {
             "First input: {}\nLast input: {}",
             self.first_input
                 .as_deref()
-                .map(|value| display_time(value, "%H:%M:%S %:z"))
+                .map(|value| display_time(value, "%H:%M:%S"))
                 .unwrap_or_else(|| "none recorded".into()),
             self.last_input
                 .as_deref()
-                .map(|value| display_time(value, "%H:%M:%S %:z"))
+                .map(|value| display_time(value, "%H:%M:%S"))
                 .unwrap_or_else(|| "none recorded".into())
         )
         .unwrap();
@@ -529,8 +538,8 @@ impl Summary {
             writeln!(
                 text,
                 "  Idle {} to {} ({})",
-                display_time(&idle.start, "%H:%M:%S %:z"),
-                display_time(&idle.end, "%H:%M:%S %:z"),
+                display_time(&idle.start, "%H:%M:%S"),
+                display_time(&idle.end, "%H:%M:%S"),
                 duration(idle.duration_us)
             )
             .unwrap();
@@ -539,23 +548,23 @@ impl Summary {
             writeln!(
                 text,
                 "  Unknown {} to {} ({})",
-                display_time(&gap.start, "%H:%M:%S %:z"),
-                display_time(&gap.end, "%H:%M:%S %:z"),
+                display_time(&gap.start, "%H:%M:%S"),
+                display_time(&gap.end, "%H:%M:%S"),
                 duration(gap.duration_us)
             )
             .unwrap();
         }
         writeln!(
             text,
-            "\n{:<12}  {:>6} {:>9} {:>8} {:>11}   {:>12}   {:>12}",
-            "Hour (local)", "Keys", "Repeats", "Clicks", "Input min", "Coverage", "Idle"
+            "\n{:<5}  {:>6} {:>9} {:>8} {:>11}   {:>12}   {:>12}",
+            "Hour", "Keys", "Repeats", "Clicks", "Input min", "Coverage", "Idle"
         )
         .unwrap();
         for hour in &self.hours {
             writeln!(
                 text,
                 "{}  {:>6} {:>9} {:>8} {:>11}   {:>12}   {:>12}",
-                display_time(&hour.start, "%H:%M %:z"),
+                display_time(&hour.start, "%H:%M"),
                 hour.counts.key_presses,
                 hour.counts.observed_key_repeats,
                 hour.counts.mouse_clicks,

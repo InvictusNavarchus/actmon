@@ -58,6 +58,11 @@ fn five_minute_grace_is_excluded_and_input_ends_idle() {
     assert_eq!(r.minutes_containing_input, 2);
     assert_eq!(r.unknown_us, 0);
     assert_eq!(r.hours.iter().map(|h| h.idle_us).sum::<i64>(), r.idle_us);
+    let text = r.render();
+    assert_eq!(text.matches("+07:00").count(), 1);
+    assert!(text.contains("Timezone: UTC+07:00"));
+    assert!(text.contains("First input: 00:00:00\nLast input: 00:20:00\n"));
+    assert!(text.contains("Idle 00:05:00 to 00:20:00"));
 }
 
 #[test]
@@ -195,7 +200,7 @@ fn overlapping_runs_do_not_double_count_coverage_or_establish_idle() {
 }
 
 #[test]
-fn hourly_durations_split_straddling_intervals_and_keep_offset_labels() {
+fn hourly_durations_split_straddling_intervals_and_share_timezone_header() {
     let mut rows: Vec<_> = (3590..3610).map(quiet).collect();
     for row in &mut rows {
         row.start += 500_000;
@@ -206,7 +211,9 @@ fn hourly_durations_split_straddling_intervals_and_keep_offset_labels() {
     assert_eq!(r.hours[1].complete_coverage_us, 10 * SECOND);
     assert_eq!(r.hours[0].idle_us, 4_500_000);
     assert_eq!(r.hours[1].idle_us, 10 * SECOND);
-    assert!(r.render().contains("01:00 +07:00"));
+    let text = r.render();
+    assert!(text.contains("\n01:00 "));
+    assert_eq!(text.matches("+07:00").count(), 1);
 }
 
 fn stamp(second: i64) -> Stamp {
@@ -303,6 +310,10 @@ fn daylight_saving_hours_preserve_distinct_offsets_and_actual_day_length() {
         assert_eq!(r.hours.len(), length);
         assert_eq!(r.unknown_us, length as i64 * 3600 * SECOND);
         if length == 25 {
+            let text = r.render();
+            assert!(text.contains("Timezone: UTC-04:00 to UTC-05:00"));
+            assert_eq!(text.matches("-04:00").count(), 1);
+            assert_eq!(text.matches("-05:00").count(), 1);
             assert!(r.hours[1].start.ends_with("-04:00"));
             assert!(r.hours[2].start.ends_with("-05:00"));
             assert!(r.hours[1].start.contains("T01:00:"));
