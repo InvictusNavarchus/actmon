@@ -180,6 +180,7 @@ pub fn create(
         stop,
     };
     let database = fs::canonicalize(database).context("open existing source database")?;
+    regular_file(&database).context("backup source must be a regular file")?;
     // Require an existing parent; do not silently build an uploader directory tree.
     let parent = fs::canonicalize(
         destination
@@ -366,10 +367,11 @@ fn validate(path: &Path, budget: Option<&Budget>) -> Result<Coverage> {
     for suffix in ["-wal", "-shm", "-journal"] {
         let mut sidecar = path.as_os_str().to_owned();
         sidecar.push(suffix);
-        ensure!(
-            !Path::new(&sidecar).try_exists()?,
-            "snapshot contains SQLite sidecar {suffix}"
-        );
+        match fs::symlink_metadata(&sidecar) {
+            Ok(_) => bail!("snapshot contains SQLite sidecar {suffix}"),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
     }
     let mut c = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     if let Some(budget) = budget {

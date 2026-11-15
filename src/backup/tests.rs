@@ -309,3 +309,26 @@ fn concurrent_wal_transactions_remain_atomic_in_snapshot() {
         .unwrap();
     assert_eq!(values, (2, 1));
 }
+
+#[test]
+fn dangling_sidecars_are_rejected_without_following_links() {
+    let root = tempfile::tempdir().unwrap();
+    let (path, _store) = source(root.path());
+    let snapshot = make(&path, &root.path().join("published"))
+        .state
+        .last_success
+        .unwrap()
+        .snapshot;
+    let copy = root.path().join("restore");
+    fs::create_dir(&copy).unwrap();
+    for name in [DATABASE, MANIFEST] {
+        fs::copy(snapshot.join(name), copy.join(name)).unwrap();
+    }
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let sidecar = copy.join(format!("{DATABASE}{suffix}"));
+        std::os::unix::fs::symlink(root.path().join("missing"), &sidecar).unwrap();
+        assert!(verify(&copy).unwrap_err().to_string().contains("sidecar"));
+        fs::remove_file(sidecar).unwrap();
+    }
+    verify(&copy).unwrap();
+}
