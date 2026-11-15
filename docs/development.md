@@ -24,6 +24,12 @@ preservation. They do not read live input or alter
 the keyboard debouncer. Killing a test process verifies application-crash
 recovery; it does not simulate power loss or establish SSD flush behavior.
 
+Summary tests cover idle thresholds, input endpoints, repeat-only activity,
+per-category coverage, incomplete input counts, gaps and restarts, overlapping
+recordings, midnight lookback, clipped boundaries, hourly durations, and read-only
+live-WAL queries with retrospective loss. CLI checks cover text/JSON reporting and
+invalid thresholds.
+
 ## Offline packaging validation
 
 The systemd templates and device rules can be checked without deployment:

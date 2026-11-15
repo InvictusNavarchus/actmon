@@ -72,3 +72,55 @@ These values do not measure application pixels or lines.
 
 See [collector architecture](architecture.md#commit-timing-and-freshness) for the
 meaning and limits of commit timing fields and freshness indicators.
+
+## Daily activity and idle summary
+
+`actmon summary --database PATH` reads an existing v1 Actmon database in a single
+read transaction, including committed WAL data. It reports local midnight to the
+time the command started, using the process's local timezone (including `TZ` when
+set). Text is the default; `--json` provides RFC 3339 timestamps with UTC offsets
+and integer microsecond durations. Hour labels include offsets to distinguish
+repeated hours during daylight saving transitions. A nonexistent local midnight
+produces an explicit error rather than guessing a boundary.
+
+Input totals include key downs, separately observed repeats, all recorded mouse
+button downs, and counts of intervals containing motion or scrolling. First/last
+input uses stored event offsets. Repeat-only timing is bounded conservatively by
+the interval endpoints because repeat events have no stored first/last offsets.
+NULL repeat measurements are counted as intervals with unknown repeat reporting;
+the observed repeat total does not imply those intervals had zero repeats.
+
+Minutes containing input are distinct minute buckets with an input-bearing
+interval, assigned using the interval's start. Counts and input minutes are also
+assigned to the starting hour. This can shift attribution by up to one second
+at minute/hour boundaries. Aggregate counts cannot be split exactly at midnight
+or the report endpoint, so counts and first/last input from boundary-straddling
+intervals are omitted. Coverage durations are clipped to the window, and hourly
+coverage and idle durations are split at hour boundaries.
+
+Idle begins after `--idle-after-seconds` of continuous observed quiet (default
+300); only time after that grace period contributes to idle duration. For example,
+input at 10:00 followed by input at 10:20 produces an idle period from 10:05 to
+10:20. Key repeats, clicks, movement, and scrolling all reset the timer. At the
+start of a recording, quiet observation starts the timer even if no earlier input
+was recorded. The command reads a bounded lookback before midnight to establish
+whether an existing quiet stretch already qualifies, then clips idle to today.
+An ongoing idle period stops at the latest recorded interval, never extrapolating
+through uncommitted time to the current clock.
+
+Idle requires complete coverage of keyboard, buttons, relative motion, and wheel
+scrolling (mask 15). A device lacking a category cannot establish overall idle;
+per-category coverage is still reported. Missing rows, incomplete/unavailable
+categories, run changes, discontinuous monotonic intervals, and UTC discontinuities
+reset the quiet timer. Overlapping intervals from clock corrections or multiple
+runs remain unknown for coverage and idle; their recorded counts are still shown.
+Retrospective loss is reflected in persisted incomplete masks by the writer.
+
+Complete coverage plus unknown duration accounts for the report window. Unknown
+periods include time before collection began and after its newest committed row,
+as well as partial or absent collection; they do not identify a cause such as
+suspension. Input can still be observed in an incomplete interval, so observed
+counts may undercount and can coexist with unknown coverage. Idle duration and
+minutes containing input are different metrics and must not be added to estimate
+working time. Reading, video playback, other unmonitored devices, or holding a key
+without reported repeats cannot be distinguished from absence of monitored input.

@@ -9,4 +9,5 @@ pub mod collector;
 pub mod db;
 pub mod input;
 pub mod model;
+pub mod summary;
 pub mod writer;

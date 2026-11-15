@@ -63,6 +63,26 @@ commit metadata as JSON. It does not prove the collector is still running; check
 freshness and journal evidence. See [data model and queries](docs/data-model.md)
 for interpreting coverage and inspecting measurements with SQL.
 
+### Summarize today's activity
+
+```sh
+./target/release/actmon summary --database /path/to/actmon/activity.db
+./target/release/actmon summary --database /path/to/actmon/activity.db --json
+```
+
+The read-only report covers local midnight to now. It shows recorded input totals,
+first/last input, minutes containing input, hourly activity, collection coverage,
+and idle periods. Idle begins after five minutes of continuously observed quiet;
+the first five minutes are excluded. Use `--idle-after-seconds 600` to change the
+threshold (1–86400 seconds).
+
+Idle measures absence of monitored input, including mouse movement and scrolling.
+Reading or watching a video can count as idle. Missing or incomplete coverage stays
+unknown and interrupts the idle timer. Summary does not change collection, create
+a database, or persist idle classifications. See
+[summary semantics](docs/data-model.md#daily-activity-and-idle-summary) for timing,
+coverage, and boundary details.
+
 ## Backups
 
 Create a verified local snapshot while the collector continues running:

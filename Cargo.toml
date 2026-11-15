@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 anyhow = "1.0"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 clap = { version = "4.6.7", features = ["derive"] }
 evdev = "0.13.2"
 rusqlite = { version = "0.42.0", features = ["bundled", "backup", "hooks"] }

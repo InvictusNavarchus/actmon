@@ -15,6 +15,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Summarize today's recorded input and idle periods in the local timezone.
+    Summary {
+        #[arg(long)]
+        database: PathBuf,
+        /// Idle starts after this many seconds of continuously observed quiet.
+        #[arg(long, default_value_t = 300, value_parser = clap::value_parser!(u64).range(1..=86400))]
+        idle_after_seconds: u64,
+        /// Print structured timestamps and microsecond durations instead of text.
+        #[arg(long)]
+        json: bool,
+    },
     /// Publish a verified local snapshot. Does not schedule jobs or delete old snapshots.
     Backup {
         #[arg(long)]
@@ -73,6 +84,18 @@ fn main() -> Result<()> {
         .with_ansi(false)
         .init();
     match Cli::parse().command {
+        Command::Summary {
+            database,
+            idle_after_seconds,
+            json,
+        } => {
+            let report = actmon::summary::today(&database, idle_after_seconds)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            } else {
+                print!("{}", report.render());
+            }
+        }
         Command::Backup {
             database,
             destination,
