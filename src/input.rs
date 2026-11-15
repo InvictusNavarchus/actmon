@@ -64,6 +64,11 @@ pub fn select<'a>(devices: &'a [DeviceInfo], name: &str) -> Result<Option<&'a De
     Ok(matches.first().copied())
 }
 
+fn has_pointer_buttons(keys: &evdev::AttributeSetRef<KeyCode>) -> bool {
+    keys.iter()
+        .any(|key| (KeyCode::BTN_LEFT.code()..=KeyCode::BTN_TASK.code()).contains(&key.code()))
+}
+
 pub struct Reader {
     pub info: DeviceInfo,
     device: RawDevice,
@@ -97,7 +102,7 @@ impl Reader {
                     bail!("selected mouse must expose relative X and Y axes");
                 }
                 MOTION
-                    | if keys.is_some_and(|keys| keys.contains(KeyCode::BTN_LEFT)) {
+                    | if keys.is_some_and(has_pointer_buttons) {
                         BUTTON
                     } else {
                         0
@@ -182,8 +187,8 @@ impl Decoder {
         }
         let action = match (self.role, ty, code, value) {
             // Exclude BTN_* ranges; include extended keyboard keys starting 0x160.
-            (Role::Keyboard, 1, 1..=255 | 352..=511 | 560..=703, 1) => Some(Action::Key),
-            (Role::Keyboard, 1, 1..=255 | 352..=511 | 560..=703, 2) => Some(Action::Repeat),
+            (Role::Keyboard, 1, 1..=255 | 352..=543 | 560..=703, 1) => Some(Action::Key),
+            (Role::Keyboard, 1, 1..=255 | 352..=543 | 560..=703, 2) => Some(Action::Repeat),
             (Role::Mouse, 1, 272..=279, 1) => Some(Action::Button(usize::from(code - 272))),
             (Role::Mouse, 2, 0..=1, v) if v != 0 => Some(Action::Motion),
             (Role::Mouse, 2, 8, v) if v != 0 && !self.hires[0] => Some(Action::Wheel {

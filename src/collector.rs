@@ -260,6 +260,7 @@ pub fn collect(mut config: Config, stop: Arc<AtomicBool>) -> Result<()> {
             capabilities: 0,
         },
     ];
+    let mut scan_error = None;
     let mut next_scan = previous.mono_us;
     let mut next_flush = previous.mono_us + SECOND;
     let result = (|| -> Result<()> {
@@ -270,18 +271,13 @@ pub fn collect(mut config: Config, stop: Arc<AtomicBool>) -> Result<()> {
                 next_flush = time.mono_us + SECOND;
             }
             if time.mono_us >= next_scan {
-                match input::discover(&config.sysfs_root, &config.device_root) {
-                    Ok(devices) => {
-                        for source in &mut sources {
-                            source.refresh(&mut agg, time, &devices);
-                        }
-                    }
-                    Err(error) => {
-                        for source in &mut sources {
-                            source.fault(&mut agg, time, format!("{error:#}"));
-                        }
-                    }
-                }
+                refresh_sources(
+                    &mut sources,
+                    &mut agg,
+                    time,
+                    input::discover(&config.sysfs_root, &config.device_root),
+                    &mut scan_error,
+                );
                 next_scan = time.mono_us + 2 * SECOND;
             }
             let readers: Vec<_> = sources.iter().filter_map(|s| s.reader.as_ref()).collect();
@@ -346,6 +342,40 @@ pub fn collect(mut config: Config, stop: Arc<AtomicBool>) -> Result<()> {
     final_batch.stopped = result.is_ok();
     writer.finish(final_batch)?;
     result
+}
+
+fn refresh_sources(
+    sources: &mut [Source],
+    agg: &mut Aggregator,
+    time: Stamp,
+    discovery: Result<Vec<input::DeviceInfo>>,
+    last_error: &mut Option<String>,
+) {
+    match discovery {
+        Ok(devices) => {
+            if last_error.take().is_some() {
+                tracing::info!("input discovery recovered");
+                agg.event(Event::new("discovery_recovered", time, "{}".into()));
+            }
+            for source in sources {
+                source.refresh(agg, time, &devices);
+            }
+        }
+        Err(error) => {
+            // A hotplug race in an unrelated node is not evidence that any
+            // already-open reader has failed. Reads independently detect that.
+            let message = format!("{error:#}");
+            if last_error.as_ref() != Some(&message) {
+                tracing::warn!(error=%message, "input discovery failed; keeping existing readers");
+                agg.event(Event::new(
+                    "discovery_error",
+                    time,
+                    serde_json::json!({"error":message}).to_string(),
+                ));
+                *last_error = Some(message);
+            }
+        }
+    }
 }
 
 fn discontinuous(before: Stamp, after: Stamp) -> bool {

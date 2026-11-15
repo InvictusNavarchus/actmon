@@ -19,6 +19,43 @@ fn keyboard_counts_transitions_without_counting_buttons_or_releases() {
 }
 
 #[test]
+fn extended_numeric_and_special_keys_are_counted_but_dpad_buttons_are_not() {
+    let mut decoder = Decoder::new(Role::Keyboard, false, false);
+    for code in [0x200, 0x209, 0x20a, 0x210, 0x212, 0x21e] {
+        assert_eq!(
+            decoder.decode(&ev(1, code, 1)),
+            Decoded::Action(Action::Key)
+        );
+        assert_eq!(
+            decoder.decode(&ev(1, code, 2)),
+            Decoded::Action(Action::Repeat)
+        );
+        assert_eq!(decoder.decode(&ev(1, code, 0)), Decoded::Ignore);
+    }
+    for code in 0x220..=0x223 {
+        assert_eq!(decoder.decode(&ev(1, code, 1)), Decoded::Ignore);
+        assert_eq!(decoder.decode(&ev(1, code, 2)), Decoded::Ignore);
+    }
+}
+
+#[test]
+fn pointer_button_capabilities_match_every_button_the_decoder_counts() {
+    let mut decoder = Decoder::new(Role::Mouse, false, false);
+    for (index, code) in (272..=279).enumerate() {
+        let mut keys = evdev::AttributeSet::new();
+        keys.insert(KeyCode::new(code));
+        assert!(has_pointer_buttons(&keys));
+        assert_eq!(
+            decoder.decode(&ev(1, code, 1)),
+            Decoded::Action(Action::Button(index))
+        );
+    }
+    let mut keyboard_only = evdev::AttributeSet::new();
+    keyboard_only.insert(KeyCode::KEY_A);
+    assert!(!has_pointer_buttons(&keyboard_only));
+}
+
+#[test]
 fn high_resolution_wheel_suppresses_duplicate_legacy_axis() {
     let mut decoder = Decoder::new(Role::Mouse, true, false);
     assert_eq!(decoder.decode(&ev(2, 8, 1)), Decoded::Ignore);

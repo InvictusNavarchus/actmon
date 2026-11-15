@@ -46,8 +46,10 @@ the design.
 Selectors use exact names and refuse ambiguous matches. A missing or inaccessible
 device is recorded as unavailable while the other source can keep collecting.
 Hotplug discovery scans sysfs every two seconds and retries unavailable devices;
-this first milestone uses periodic discovery rather than a udev monitor. Recreated
-virtual devices are reopened. There may be an unobserved period before discovery.
+this first milestone uses periodic discovery rather than a udev monitor. Discovery
+failures are reported separately and retried while existing readers continue;
+reader errors still close the affected source. Recreated virtual devices are
+reopened. There may be an unobserved period before discovery.
 
 The collector holds an advisory lock next to the database to reject a second
 Actmon collector targeting the same resolved path. The lock file is persistent;

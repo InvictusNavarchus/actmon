@@ -99,13 +99,24 @@ fn metadata_and_status_commands_do_not_create_databases() {
         .unwrap();
     assert!(!output.status.success());
     assert!(!db.exists());
+    fs::create_dir_all(root.path().join("sys/event0/device")).unwrap();
+    fs::write(root.path().join("sys/event0/device/name"), "test mouse \n").unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_actmon"))
         .args(["devices", "--sysfs-root"])
         .arg(root.path().join("sys"))
+        .arg("--device-root")
+        .arg(root.path().join("absent-dev-root"))
         .output()
         .unwrap();
     assert!(output.status.success());
-    assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "[]");
+    let devices: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(devices[0]["name"], "test mouse ");
+    assert_eq!(
+        devices[0]["node"],
+        root.path().join("absent-dev-root/event0").to_str().unwrap()
+    );
+    assert!(!db.exists());
+    assert!(!root.path().join("absent-dev-root").exists());
 }
 
 #[test]

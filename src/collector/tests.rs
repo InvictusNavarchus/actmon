@@ -71,3 +71,31 @@ fn disconnect_and_overrun_only_invalidate_supported_categories() {
     assert_eq!(batch.intervals[0].incomplete, MOTION);
     assert_eq!(source.mask(), 0);
 }
+
+#[test]
+fn discovery_failure_preserves_source_state_and_reports_without_repeated_noise() {
+    let mut agg = Aggregator::new(time(0));
+    agg.coverage(time(0), MOTION, true, false);
+    let mut sources = [source(MOTION, 100)];
+    let mut last_error = None;
+    for at in [200, 300] {
+        refresh_sources(
+            &mut sources,
+            &mut agg,
+            time(at),
+            Err(anyhow::anyhow!("unrelated hotplug race")),
+            &mut last_error,
+        );
+    }
+    assert_eq!(sources[0].mask(), MOTION);
+    assert_eq!(sources[0].last_drained_us, 100);
+    assert!(sources[0].fault.is_none());
+    let batch = agg.finish(time(2 * SECOND), false);
+    assert_eq!(
+        (batch.intervals[0].available, batch.intervals[0].incomplete),
+        (MOTION, 0)
+    );
+    assert_eq!(batch.events.len(), 1);
+    assert_eq!(batch.events[0].kind, "discovery_error");
+    assert!(batch.events[0].loss.is_none());
+}
