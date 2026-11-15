@@ -60,6 +60,11 @@ cargo build --locked --release
 bash scripts/verify-packaging.sh
 ```
 
+The verification script uses a disposable filesystem root. It validates the
+packaged calendar expression and checks that enabling the collector also enables
+the backup timer, while a deliberately masked timer stays masked on later enables.
+It does not install or start host services.
+
 Review `packaging/actmon.env.example` and
 `packaging/udev/99-actmon-input.rules.example` together. Both must select the same
 keyboard and mouse. Preserve the mouse name's trailing space inside quotes.
