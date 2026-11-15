@@ -203,8 +203,13 @@ not malicious replacement of both the database and manifest.
 `--timeout-seconds` defaults to 300 (allowed range 1–86400). The deadline and
 SIGINT/SIGTERM are checked between copy/hash steps and during SQLite validation.
 They are cooperative limits: an individual filesystem operation, flush, or SQLite
-step can exceed them. Failed or cancelled work exits nonzero, preserves earlier
-snapshots, and cleans only its own staging. A hard kill can leave staging behind;
+step can exceed them. The last cancellation/deadline check is immediately before
+publication begins. Cancellation observed before that boundary exits nonzero,
+preserves earlier snapshots, and cleans only its own staging. Once publication
+begins, Actmon completes directory synchronization and records the outcome even
+if cancellation or the deadline arrives meanwhile; successful publication remains
+a success. Actual publication, synchronization, or state-write failures still exit
+nonzero. A hard kill can leave staging behind;
 Actmon does not automatically remove unknown stale directories. A sync failure
 after rename leaves the complete visible artifact in place and reports uncertain
 publication durability. There is no power-loss hardware guarantee from these tests.

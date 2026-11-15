@@ -321,6 +321,8 @@ fn publish(
     file.sync_all()?;
     File::open(&copy)?.sync_all()?;
     sync_dir(staging.path())?;
+    // Publication is the commit boundary: after this check, finish directory
+    // synchronization and outcome recording even if cancellation arrives.
     budget.check()?;
     let name = format!(
         "snapshot-{}-{}",
