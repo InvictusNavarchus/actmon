@@ -144,3 +144,48 @@ fn retry_after_uncertain_commit_does_not_duplicate_a_successful_batch() {
     );
     assert_eq!(store.next_batch, 2);
 }
+
+#[test]
+fn committed_loss_applies_to_intervals_inserted_in_a_later_batch_only_in_its_run() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("activity.db");
+    let mut store = Store::open(&path, "boot-a", "{}").unwrap();
+    let mut loss = Event::new("writer_queue_loss", stamp(4_100_000), "{}".into());
+    loss.loss = Some((3_900_000, 4_100_001, KEYBOARD));
+    store
+        .write(&Batch {
+            events: vec![loss],
+            ..Batch::default()
+        })
+        .unwrap();
+    let mut agg = Aggregator::new(stamp(4 * SECOND));
+    agg.coverage(stamp(4 * SECOND), KEYBOARD, true, false);
+    store.write(&agg.finish(stamp(7 * SECOND), false)).unwrap();
+    let masks: Vec<i64> = store
+        .connection()
+        .prepare("SELECT incomplete_mask FROM intervals ORDER BY id")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(masks, vec![i64::from(KEYBOARD), 0]);
+    drop(store);
+    let mut next_run = Store::open(&path, "boot-b", "{}").unwrap();
+    let mut agg = Aggregator::new(stamp(4 * SECOND));
+    agg.coverage(stamp(4 * SECOND), KEYBOARD, true, false);
+    next_run
+        .write(&agg.finish(stamp(6 * SECOND), false))
+        .unwrap();
+    assert_eq!(
+        next_run
+            .connection()
+            .query_row(
+                "SELECT incomplete_mask FROM intervals ORDER BY id DESC LIMIT 1",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+}

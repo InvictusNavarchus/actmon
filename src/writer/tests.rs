@@ -19,11 +19,20 @@ fn saturated_queue_is_bounded_and_next_batch_exposes_earliest_lost_evidence() {
         })
         .unwrap();
     assert_eq!(writer.lost_since, Some(10));
+    let mut earlier = Event::new("late", clock::now(), "{}".into());
+    earlier.loss = Some((5, 8, KEYBOARD));
+    writer
+        .submit(Batch {
+            events: vec![earlier],
+            ..Batch::default()
+        })
+        .unwrap();
+    assert_eq!(writer.lost_since, Some(5));
     receiver.recv().unwrap();
     writer.submit(Batch::default()).unwrap();
     let batch = receiver.recv().unwrap();
     assert_eq!(batch.events[0].kind, "writer_queue_loss");
-    assert_eq!(batch.events[0].loss.unwrap().0, 10);
+    assert_eq!(batch.events[0].loss.unwrap().0, 5);
     assert_eq!(batch.events[0].loss.unwrap().2, KEYBOARD | MOUSE);
     assert!(writer.lost_since.is_none());
 }

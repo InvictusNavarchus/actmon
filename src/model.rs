@@ -146,6 +146,7 @@ pub struct Aggregator {
     repeats_supported: bool,
     buckets: BTreeMap<i64, Interval>,
     events: Vec<Event>,
+    pending_losses: Vec<(i64, i64, u8)>,
 }
 
 impl Aggregator {
@@ -158,6 +159,7 @@ impl Aggregator {
             repeats_supported: false,
             buckets: BTreeMap::new(),
             events: Vec::new(),
+            pending_losses: Vec::new(),
         }
     }
 
@@ -172,16 +174,38 @@ impl Aggregator {
             .last_key_value()
             .map_or(self.finalized, |(key, _)| key + SECOND);
         while next <= end {
-            self.buckets.insert(
-                next,
-                Interval::new(next, self.mapping, self.available, self.repeats_supported),
-            );
+            let mut bucket =
+                Interval::new(next, self.mapping, self.available, self.repeats_supported);
+            for &(start, end, mask) in &self.pending_losses {
+                if next < end && next + SECOND > start {
+                    bucket.incomplete |= mask;
+                }
+            }
+            self.buckets.insert(next, bucket);
             next += SECOND;
         }
     }
 
     pub fn event(&mut self, event: Event) {
         if let Some((start, end, mask)) = event.loss {
+            // A loss can precede bucket creation or survive across batches.
+            // Coalesce overlapping ranges of the same mask; prune only after
+            // every affected interval has been finalized.
+            if end > self.finalized && start < end {
+                let mut merged_start = start.max(self.finalized);
+                let mut merged_end = end;
+                self.pending_losses
+                    .retain(|&(old_start, old_end, old_mask)| {
+                        if old_mask == mask && old_start <= merged_end && old_end >= merged_start {
+                            merged_start = merged_start.min(old_start);
+                            merged_end = merged_end.max(old_end);
+                            false
+                        } else {
+                            true
+                        }
+                    });
+                self.pending_losses.push((merged_start, merged_end, mask));
+            }
             for bucket in self.buckets.values_mut() {
                 if bucket.start_mono_us < end && bucket.start_mono_us + bucket.duration_us > start {
                     bucket.incomplete |= mask;
@@ -203,10 +227,17 @@ impl Aggregator {
         }
         let start = self.bucket_start(time.mono_us);
         if let Some(bucket) = self.buckets.get_mut(&start) {
-            bucket.available &= !mask;
-            bucket.incomplete |= mask;
-            if mask & KEYBOARD != 0 {
-                bucket.repeats_supported = false;
+            if time.mono_us == start {
+                bucket.available = (bucket.available & !mask) | (self.available & mask);
+                if mask & KEYBOARD != 0 {
+                    bucket.repeats_supported = self.repeats_supported;
+                }
+            } else {
+                bucket.available &= !mask;
+                bucket.incomplete |= mask;
+                if mask & KEYBOARD != 0 {
+                    bucket.repeats_supported = false;
+                }
             }
         }
     }
@@ -255,6 +286,8 @@ impl Aggregator {
             self.finalized = start + bucket.duration_us;
             intervals.push(bucket);
         }
+        self.pending_losses
+            .retain(|&(_, end, _)| end > self.finalized);
         Batch {
             intervals,
             events: std::mem::take(&mut self.events),

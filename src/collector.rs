@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     clock::{self, Stamp},
     input::{self, Decoded, Reader, Role},
-    model::{Aggregator, Event, KEYBOARD, MOUSE, SECOND},
+    model::{Aggregator, Event, SECOND},
     writer::Writer,
 };
 
@@ -36,15 +36,25 @@ struct Source {
     fault: Option<String>,
     loss_start: Option<i64>,
     last_drained_us: i64,
+    capabilities: u8,
 }
 
 impl Source {
     fn mask(&self) -> u8 {
-        if self.role == Role::Keyboard {
-            KEYBOARD
-        } else {
-            MOUSE
+        self.capabilities
+    }
+
+    fn invalidate_tail(&mut self, agg: &mut Aggregator, time: Stamp, kind: &str) {
+        if self.mask() == 0 || self.last_drained_us >= time.mono_us {
+            return;
         }
+        let mut event = Event::new(
+            kind,
+            time,
+            serde_json::json!({"role":self.role}).to_string(),
+        );
+        event.loss = Some((self.last_drained_us, time.mono_us, self.mask()));
+        agg.event(event);
     }
 
     fn report(&mut self, agg: &mut Aggregator, time: Stamp, kind: &str, details: String) {
@@ -59,7 +69,6 @@ impl Source {
         if let Some(start) = self.loss_start.take() {
             self.record_loss(agg, time, start);
         }
-        self.reader = None;
         agg.coverage(time, self.mask(), false, false);
         let mut loss = Event::new(
             "source_unavailable",
@@ -68,6 +77,8 @@ impl Source {
         );
         loss.loss = Some((self.last_drained_us, time.mono_us + 1, self.mask()));
         agg.event(loss);
+        self.reader = None;
+        self.capabilities = 0;
     }
 
     fn record_loss(&mut self, agg: &mut Aggregator, time: Stamp, start: i64) {
@@ -103,6 +114,7 @@ impl Source {
         match Reader::open(info.clone(), self.role) {
             Ok(reader) => {
                 let time = clock::now();
+                self.capabilities = reader.mask;
                 agg.coverage(time, reader.mask, true, reader.repeats_supported);
                 self.report(
                     agg,
@@ -236,6 +248,7 @@ pub fn collect(mut config: Config, stop: Arc<AtomicBool>) -> Result<()> {
             fault: None,
             loss_start: None,
             last_drained_us: previous.mono_us,
+            capabilities: 0,
         },
         Source {
             role: Role::Mouse,
@@ -244,6 +257,7 @@ pub fn collect(mut config: Config, stop: Arc<AtomicBool>) -> Result<()> {
             fault: None,
             loss_start: None,
             last_drained_us: previous.mono_us,
+            capabilities: 0,
         },
     ];
     let mut next_scan = previous.mono_us;
@@ -251,12 +265,10 @@ pub fn collect(mut config: Config, stop: Arc<AtomicBool>) -> Result<()> {
     let result = (|| -> Result<()> {
         while !stop.load(Ordering::Relaxed) {
             let time = clock::now();
-            if discontinuous(previous, time) {
-                agg.discontinuity(time);
+            if observe_time(&mut agg, &mut previous, time) {
                 next_scan = time.mono_us;
                 next_flush = time.mono_us + SECOND;
             }
-            previous = time;
             if time.mono_us >= next_scan {
                 match input::discover(&config.sysfs_root, &config.device_root) {
                     Ok(devices) => {
@@ -286,16 +298,18 @@ pub fn collect(mut config: Config, stop: Arc<AtomicBool>) -> Result<()> {
             drop(fds);
             drop(readers);
             let after_poll = clock::now();
-            if discontinuous(previous, after_poll) {
-                agg.discontinuity(after_poll);
+            if observe_time(&mut agg, &mut previous, after_poll) {
                 next_scan = after_poll.mono_us;
                 next_flush = after_poll.mono_us + SECOND;
             }
-            previous = after_poll;
             for source in &mut sources {
                 source.drain(&mut agg);
             }
             let time = clock::now();
+            if observe_time(&mut agg, &mut previous, time) {
+                next_scan = time.mono_us;
+                next_flush = time.mono_us + SECOND;
+            }
             if time.mono_us >= next_flush {
                 // Keep an unresolved overrun incomplete across interval boundaries.
                 for source in &mut sources {
@@ -310,7 +324,11 @@ pub fn collect(mut config: Config, stop: Arc<AtomicBool>) -> Result<()> {
         Ok(())
     })();
     let time = clock::now();
+    observe_time(&mut agg, &mut previous, time);
     for source in &mut sources {
+        // A signal can leave poll via EINTR without one final drain. Preserve
+        // the entire unread tail, including any full interval it crosses.
+        source.invalidate_tail(&mut agg, time, "shutdown_unread_tail");
         if let Some(start) = source.loss_start {
             source.record_loss(&mut agg, time, start);
         }
@@ -336,3 +354,15 @@ fn discontinuous(before: Stamp, after: Stamp) -> bool {
         || ((after.utc_us - before.utc_us) - mono).abs() > 100_000
         || ((after.boot_us - before.boot_us) - mono).abs() > 100_000
 }
+
+fn observe_time(agg: &mut Aggregator, previous: &mut Stamp, time: Stamp) -> bool {
+    let gap = discontinuous(*previous, time);
+    if gap {
+        agg.discontinuity(time);
+    }
+    *previous = time;
+    gap
+}
+
+#[cfg(test)]
+mod tests;

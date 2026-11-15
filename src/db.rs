@@ -69,6 +69,11 @@ impl Store {
             tx.pragma_update(None, "user_version", 1)?;
             tx.commit()?;
         }
+        // An additive index also upgrades already-created v1 databases. It
+        // keeps per-interval loss lookups bounded to ranges ending after it.
+        connection.execute_batch(
+            "CREATE INDEX IF NOT EXISTS events_loss ON events(run_id,loss_end_mono_us);",
+        )?;
         let time = clock::now();
         connection.execute("INSERT INTO runs(boot_id,version,configuration,started_utc_us,started_mono_us) VALUES(?1,?2,?3,?4,?5)",
             params![boot_id, env!("CARGO_PKG_VERSION"), configuration, time.utc_us, time.mono_us])?;
@@ -133,9 +138,20 @@ impl Store {
 }
 
 fn insert_interval(tx: &rusqlite::Transaction<'_>, run: i64, r: &Interval) -> Result<()> {
+    // A loss event can be committed before all affected intervals exist,
+    // especially when a queue-overflow marker reaches the writer first.
+    let mut incomplete = r.incomplete;
+    let mut losses = tx.prepare_cached("SELECT loss_mask FROM events WHERE run_id=?1 AND loss_end_mono_us>?2 AND loss_start_mono_us<?3")?;
+    let masks = losses.query_map(
+        params![run, r.start_mono_us, r.start_mono_us + r.duration_us],
+        |row| row.get::<_, u8>(0),
+    )?;
+    for mask in masks {
+        incomplete |= mask?;
+    }
     tx.execute("INSERT INTO intervals(run_id,start_mono_us,start_utc_us,duration_us,available_mask,incomplete_mask,key_downs,key_repeats,button_left,button_right,button_middle,button_side,button_extra,button_forward,button_back,button_task,moved,wheel_up,wheel_down,wheel_right,wheel_left,key_first_us,key_last_us,button_first_us,button_last_us,motion_first_us,motion_last_us,scroll_first_us,scroll_last_us)
         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29)",
-        params![run,r.start_mono_us,r.start_utc_us,r.duration_us,r.available,r.incomplete,r.keys,
+        params![run,r.start_mono_us,r.start_utc_us,r.duration_us,r.available,incomplete,r.keys,
             if r.repeats_supported || r.repeats>0 { Some(r.repeats) } else { None },
             r.buttons[0],r.buttons[1],r.buttons[2],r.buttons[3],r.buttons[4],r.buttons[5],r.buttons[6],r.buttons[7],
             r.moved,r.wheel[0],r.wheel[1],r.wheel[2],r.wheel[3],

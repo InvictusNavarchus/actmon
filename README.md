@@ -123,6 +123,12 @@ writer delay can add to that. Already-finalized intervals receiving late input
 are conservatively marked incomplete rather than silently moving old input into
 the current second.
 
+Loss ranges also apply to intervals created or inserted in later batches. Source
+coverage changes at exact interval boundaries do not create artificial partial
+intervals. Loss and disconnect events only affect the source's supported
+categories. Shutdown invalidates the unread tail since each source's last
+successful drain, including any full interval crossed by that tail.
+
 Raw evdev mode exposes SYN_DROPPED directly. The decoder ignores events through
 the next SYN_REPORT, does not synthesize replacement keypresses, and marks the
 potentially affected range incomplete. It conservatively includes the period
