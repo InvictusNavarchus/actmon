@@ -179,6 +179,17 @@ pub fn create(
             .context("timeout too large")?,
         stop,
     };
+    create_with_progress(database, destination, budget, |_| {})
+}
+
+// Observe completed copy steps internally so tests can coordinate cancellation
+// and deadlines with actual incremental work, rather than racing startup.
+fn create_with_progress(
+    database: &Path,
+    destination: &Path,
+    budget: Budget,
+    mut on_step: impl FnMut(StepResult),
+) -> Result<Status> {
     let database = fs::canonicalize(database).context("open existing source database")?;
     regular_file(&database).context("backup source must be a regular file")?;
     // Require an existing parent; do not silently build an uploader directory tree.
@@ -228,7 +239,7 @@ pub fn create(
     state.last_error = None;
     write_state(&control, &state)?;
     tracing::info!(source=%database.display(), destination=%destination.display(), "backup started");
-    let result = publish(&database, &destination, &control, &budget);
+    let result = publish(&database, &destination, &control, &budget, &mut on_step);
     state.attempt_finished_utc_us = Some(crate::clock::now().utc_us);
     let outcome = match result {
         Ok(success) => {
@@ -260,6 +271,7 @@ fn publish(
     destination: &Path,
     control: &Path,
     budget: &Budget,
+    on_step: &mut impl FnMut(StepResult),
 ) -> Result<Success> {
     budget.check()?;
     let source = Connection::open_with_flags(database, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
@@ -276,7 +288,9 @@ fn publish(
         let backup = Backup::new(&source, &mut target)?;
         loop {
             budget.check()?;
-            match backup.step(256)? {
+            let step = backup.step(256)?;
+            on_step(step);
+            match step {
                 StepResult::Done => break,
                 StepResult::More => thread::sleep(Duration::from_millis(1)),
                 StepResult::Busy | StepResult::Locked => thread::sleep(Duration::from_millis(25)),

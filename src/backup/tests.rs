@@ -53,14 +53,42 @@ fn live_wal_snapshot_restores_without_original_and_supports_new_writes() {
     let read = crate::db::status(&restored.join(DATABASE)).unwrap();
     assert_eq!(read.run_id, Some(1));
     let mut store = Store::open(&restored.join(DATABASE), "restored-boot", "{}").unwrap();
-    store.write(&crate::model::Batch::default()).unwrap();
+    let stamp = |mono_us| Stamp {
+        mono_us,
+        utc_us: 10_000_000 + mono_us,
+        boot_us: mono_us,
+    };
+    let mut agg = Aggregator::new(stamp(0));
+    agg.coverage(stamp(0), KEYBOARD, true, false);
+    agg.input(stamp(100), 100, Action::Key);
+    agg.input(stamp(200), 200, Action::Key);
+    agg.event(crate::model::Event::new(
+        "restore_probe",
+        stamp(300),
+        "{}".into(),
+    ));
+    store.write(&agg.finish(stamp(3_000_000), false)).unwrap();
+    drop(store);
+    let reopened =
+        Connection::open_with_flags(restored.join(DATABASE), OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
     assert_eq!(
-        store
-            .connection()
+        reopened
+            .query_row(
+                "SELECT sum(key_downs) FROM intervals WHERE run_id=2",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        2
+    );
+    assert_eq!(reopened.query_row("SELECT count(*) FROM events WHERE run_id=2 AND kind='restore_probe' AND details='{}'", [], |r| r.get::<_,i64>(0)).unwrap(), 1);
+    assert_eq!(
+        reopened
             .query_row("select sum(key_downs) from intervals", [], |r| r
                 .get::<_, i64>(0))
             .unwrap(),
-        1
+        3
     );
     assert_eq!(
         crate::db::status(&restored.join(DATABASE)).unwrap().run_id,
@@ -202,8 +230,120 @@ fn excess_snapshots_are_reported_but_never_deleted() {
     verify(&first).unwrap();
 }
 
+fn pad_source(store: &Store) {
+    store.connection().execute_batch("WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<1000) INSERT INTO events(run_id,utc_us,mono_us,kind,details) SELECT 1,1,1,'padding',hex(zeroblob(2048)) FROM n;").unwrap();
+}
+
+fn assert_interruption_preserved(dest: &Path, previous: &Path) {
+    let report = status(dest).unwrap();
+    assert!(
+        report
+            .state
+            .last_error
+            .unwrap()
+            .contains("deadline exceeded")
+    );
+    assert_eq!(report.state.last_success.unwrap().snapshot, previous);
+    assert_eq!(report.snapshot_directories, 1);
+    assert!(
+        fs::read_dir(control_path(dest).unwrap())
+            .unwrap()
+            .all(|entry| !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("staging-"))
+    );
+    verify(previous).unwrap();
+}
+
 #[test]
-fn deadline_bounds_contended_source_and_cancellation_preserves_artifacts() {
+fn cancellation_after_first_copy_step_stops_before_next_step() {
+    let root = tempfile::tempdir().unwrap();
+    let (path, store) = source(root.path());
+    let dest = root.path().join("published");
+    let previous = make(&path, &dest).state.last_success.unwrap().snapshot;
+    pad_source(&store);
+    let stop = Arc::new(AtomicBool::new(false));
+    let worker_stop = Arc::clone(&stop);
+    let (started, wait_started) = std::sync::mpsc::channel();
+    let (cancelled, wait_cancelled) = std::sync::mpsc::channel();
+    let worker = thread::spawn(move || {
+        if wait_started.recv_timeout(Duration::from_secs(5)).is_ok() {
+            worker_stop.store(true, Ordering::Relaxed);
+            cancelled.send(()).unwrap();
+        }
+    });
+    let mut steps = 0;
+    let result = create_with_progress(
+        &path,
+        &dest,
+        Budget {
+            deadline: Instant::now() + Duration::from_secs(5),
+            stop,
+        },
+        |step| {
+            steps += 1;
+            if steps == 1 {
+                assert_eq!(step, StepResult::More);
+                started.send(()).unwrap();
+                wait_cancelled.recv_timeout(Duration::from_secs(5)).unwrap();
+            }
+        },
+    );
+    drop(started);
+    worker.join().unwrap();
+    assert!(result.unwrap_err().to_string().contains("cancelled"));
+    assert_eq!(
+        steps, 1,
+        "cancellation must be checked before another copy step"
+    );
+    assert_interruption_preserved(&dest, &previous);
+}
+
+#[test]
+fn deadline_expiring_after_first_copy_step_stops_before_next_step() {
+    let root = tempfile::tempdir().unwrap();
+    let (path, store) = source(root.path());
+    let dest = root.path().join("published");
+    let previous = make(&path, &dest).state.last_success.unwrap().snapshot;
+    pad_source(&store);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let mut steps = 0;
+    let result = create_with_progress(
+        &path,
+        &dest,
+        Budget {
+            deadline,
+            stop: Arc::new(AtomicBool::new(false)),
+        },
+        |step| {
+            steps += 1;
+            if steps == 1 {
+                assert_eq!(step, StepResult::More);
+                // Expire a real deadline at a known copy boundary. No SQLite lock
+                // timeout can masquerade as deadline enforcement in this test.
+                thread::sleep(
+                    deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(10),
+                );
+            }
+        },
+    );
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("deadline exceeded")
+    );
+    assert_eq!(
+        steps, 1,
+        "deadline must be checked before another copy step"
+    );
+    assert_interruption_preserved(&dest, &previous);
+}
+
+#[test]
+fn contended_source_fails_without_publication() {
     let root = tempfile::tempdir().unwrap();
     let (path, store) = source(root.path());
     drop(store);
@@ -212,30 +352,15 @@ fn deadline_bounds_contended_source_and_cancellation_preserves_artifacts() {
         .execute_batch("pragma journal_mode=DELETE; begin exclusive;")
         .unwrap();
     let dest = root.path().join("published");
-    let start = Instant::now();
-    assert!(
-        create(
-            &path,
-            &dest,
-            Duration::from_millis(50),
-            Arc::new(AtomicBool::new(false))
-        )
-        .is_err()
+    let result = create(
+        &path,
+        &dest,
+        Duration::from_secs(5),
+        Arc::new(AtomicBool::new(false)),
     );
-    assert!(start.elapsed() < Duration::from_secs(2));
+    assert!(result.is_err());
     assert_eq!(fs::read_dir(&dest).unwrap().count(), 0);
     writer.execute_batch("rollback;").unwrap();
-    let first = make(&path, &dest).state.last_success.unwrap().snapshot;
-    assert!(
-        create(
-            &path,
-            &dest,
-            Duration::from_secs(5),
-            Arc::new(AtomicBool::new(true))
-        )
-        .is_err()
-    );
-    verify(&first).unwrap();
 }
 
 #[test]
@@ -331,4 +456,36 @@ fn dangling_sidecars_are_rejected_without_following_links() {
         fs::remove_file(sidecar).unwrap();
     }
     verify(&copy).unwrap();
+}
+
+#[test]
+fn snapshot_between_separate_uncommitted_updates_excludes_both() {
+    let root = tempfile::tempdir().unwrap();
+    let (path, store) = source(root.path());
+    store.connection().execute_batch("INSERT INTO events(run_id,utc_us,mono_us,kind,details) VALUES(1,1,1,'pair-a','0'),(1,1,1,'pair-b','0');").unwrap();
+    let mut writer = Connection::open(&path).unwrap();
+    let tx = writer.transaction().unwrap();
+    tx.execute("UPDATE events SET details='1' WHERE kind='pair-a'", [])
+        .unwrap();
+    let dest = root.path().join("published");
+    // The writer remains between two statements throughout this backup.
+    let before = make(&path, &dest).state.last_success.unwrap().snapshot;
+    tx.execute("UPDATE events SET details='1' WHERE kind='pair-b'", [])
+        .unwrap();
+    tx.commit().unwrap();
+    let after = make(&path, &dest).state.last_success.unwrap().snapshot;
+    for (snapshot, expected) in [(before, "0"), (after, "1")] {
+        verify(&snapshot).unwrap();
+        let c =
+            Connection::open_with_flags(snapshot.join(DATABASE), OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap();
+        let values = c
+            .prepare("SELECT details FROM events WHERE kind IN ('pair-a','pair-b') ORDER BY kind")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(values, vec![expected, expected]);
+    }
 }
