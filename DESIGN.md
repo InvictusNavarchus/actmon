@@ -350,3 +350,38 @@ Before implementation, finalize the production schema and clock model, source
 matching rules, buffering limits, service paths, and backup deletion contract.
 These choices must preserve the measurement, durability, and coverage decisions
 above. Actmon development does not include changing or deploying Batmon.
+
+## Initial implementation status
+
+The first implementation milestone provides collect, devices, and status
+commands, raw evdev classification, monotonic timestamps, interval aggregation,
+coverage invalidation, a bounded writer queue, and versioned SQLite storage with
+FULL commits. See README.md for executable behavior and query examples.
+
+Concrete choices for this milestone are:
+
+- Select one keyboard and one relative mouse by exact name; refuse ambiguous
+  matches and preserve their connection metadata. There is no physical-keyboard
+  fallback. Touchpad capture is not implemented.
+- Discover and retry devices through sysfs every two seconds. A udev event monitor
+  remains a later improvement; reconnect discovery is not instantaneous.
+- Use CLOCK_MONOTONIC for evdev and interval timestamps, with UTC mapping and
+  CLOCK_BOOTTIME comparisons to detect clock or capture discontinuities. Direct
+  sleep notifications remain later work.
+- Retain one second of finalization grace for boundary events. Normal aggregation
+  holds roughly one to two seconds before enqueueing. Late arrivals conservatively
+  invalidate already-persisted coverage; they are not moved into current counts.
+- Bound the writer queue to 120 batches, retry failed writes every 250 ms, and
+  record queue loss after recovery. Batches carry an atomic per-run sequence
+  marker so uncertain commit outcomes can be retried without duplicate counts.
+- Persist first/last event timestamps as offsets from interval start. Wheel values
+  use 1/120 nominal detent units, with high-resolution reporting taking precedence
+  over legacy events independently for each axis.
+- Require an explicit database path. Service paths, deployed device permissions,
+  automatic backups, and safe backup rotation remain subsequent milestones.
+
+Tests exercise synthetic events, temporary databases, metadata fixtures, process
+shutdown/crashes, and queue saturation. Live keyboard/mouse access, actual
+suspension, durable-commit energy cost, and SSD power-loss behavior remain
+unverified. The development environment has sysfs metadata but no input nodes;
+no running debouncer or installed collector was changed.
