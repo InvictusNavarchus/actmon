@@ -101,6 +101,12 @@ impl Store {
             // does not duplicate measurements or wedge on a uniqueness error.
             tx.rollback()?;
             self.next_batch += 1;
+            self.previous_commit_latency_us = None;
+            tracing::warn!(
+                run_id = self.run,
+                batch = last_batch,
+                "batch persistence confirmed after uncertain commit; original latency unavailable"
+            );
             return Ok(());
         }
         for row in &batch.intervals {
@@ -120,7 +126,7 @@ impl Store {
             .intervals
             .last()
             .map(|r| time.mono_us - r.start_mono_us - r.duration_us);
-        tx.execute("UPDATE runs SET latest_commit_utc_us=?2, stopped_utc_us=CASE WHEN ?3 THEN ?2 ELSE stopped_utc_us END, capture_to_commit_us=?4,previous_commit_latency_us=?5,last_batch=?6 WHERE id=?1",
+        tx.execute("UPDATE runs SET latest_commit_utc_us=?2, stopped_utc_us=CASE WHEN ?3 THEN ?2 ELSE stopped_utc_us END, capture_to_commit_us=COALESCE(?4,capture_to_commit_us),previous_commit_latency_us=?5,last_batch=?6 WHERE id=?1",
             params![self.run,time.utc_us,batch.stopped,lag,self.previous_commit_latency_us,self.next_batch])?;
         tx.commit()?;
         self.next_batch += 1;

@@ -148,11 +148,16 @@ write retries; storage failure at exit can leave only a journal explanation and
 an unexplained database gap.
 
 The latest commit timestamp is sampled before its successful transaction, so it
-is an approximate freshness indicator. `latest_capture_to_commit_us` measures
-the newest interval's age at transaction start, excluding the commit itself.
+is an approximate freshness indicator. `latest_capture_to_commit_us` retains
+the newest interval's measured age at the start of the transaction that inserted
+it, excluding the commit itself. Event-only commits preserve this measurement
+and its association with `latest_interval_utc_us`; it is not a continuously
+updated age or a measurement of the event-only commit.
 `previous_commit_latency_us` retains the preceding transaction's measured cost
-without adding a second synchronization per batch. No heartbeat or timestamp
-proves uninterrupted collection or power-loss recovery.
+without adding a second synchronization per batch. If a retry establishes that
+an uncertain commit persisted, the next batch records that latency as NULL rather
+than reusing an older transaction's timing. The recovery is logged separately.
+No heartbeat or timestamp proves uninterrupted collection or power-loss recovery.
 
 ## Development and verification
 

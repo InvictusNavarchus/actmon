@@ -189,3 +189,52 @@ fn committed_loss_applies_to_intervals_inserted_in_a_later_batch_only_in_its_run
         0
     );
 }
+
+#[test]
+fn event_only_commits_preserve_the_last_intervals_measured_lag() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("activity.db");
+    let mut store = Store::open(&path, "boot-a", "{}").unwrap();
+    let event_only = Batch {
+        events: vec![Event::new("test", stamp(0), "{}".into())],
+        ..Batch::default()
+    };
+    store.write(&event_only).unwrap();
+    assert!(status(&path).unwrap().latest_capture_to_commit_us.is_none());
+    let mut agg = Aggregator::new(stamp(0));
+    store.write(&agg.finish(stamp(2 * SECOND), false)).unwrap();
+    let before = status(&path).unwrap();
+    assert!(before.latest_capture_to_commit_us.is_some());
+    store.write(&event_only).unwrap();
+    let after = status(&path).unwrap();
+    assert_eq!(
+        after.latest_capture_to_commit_us,
+        before.latest_capture_to_commit_us
+    );
+    assert_eq!(after.latest_interval_utc_us, before.latest_interval_utc_us);
+}
+
+#[test]
+fn confirmed_uncertain_commit_clears_stale_latency_for_the_next_batch() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("activity.db");
+    let mut store = Store::open(&path, "boot-a", "{}").unwrap();
+    let mut agg = Aggregator::new(stamp(0));
+    let batch = agg.finish(stamp(SECOND), true);
+    store.write(&batch).unwrap();
+    // Model a committed batch whose success was not acknowledged, with timing
+    // left over from a different transaction. The batch marker is authoritative.
+    store.next_batch = 1;
+    store.previous_commit_latency_us = Some(12345);
+    store.write(&batch).unwrap();
+    assert!(store.previous_commit_latency_us.is_none());
+    store.write(&Batch::default()).unwrap();
+    assert!(status(&path).unwrap().previous_commit_latency_us.is_none());
+    assert_eq!(
+        store
+            .connection()
+            .query_row("SELECT count(*) FROM intervals", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+}
