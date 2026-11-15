@@ -75,7 +75,10 @@ meaning and limits of commit timing fields and freshness indicators.
 
 ## Daily activity and idle summary
 
-`actmon summary --database PATH` reads an existing v1 Actmon database in a single
+`actmon summary` defaults to `$HOME/.local/share/actmon/activity.db`; use
+`--database PATH` to read a custom location. The default requires an absolute
+`HOME`, and an explicit path bypasses home-directory lookup. Missing databases
+are not created. Summary reads an existing v1 Actmon database in a single
 read transaction, including committed WAL data. It reports local midnight to the
 time the command started, using the process's local timezone (including `TZ` when
 set). Text is the default; `--json` provides RFC 3339 timestamps with UTC offsets

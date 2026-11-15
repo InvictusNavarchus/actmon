@@ -66,9 +66,16 @@ for interpreting coverage and inspecting measurements with SQL.
 ### Summarize today's activity
 
 ```sh
-./target/release/actmon summary --database /path/to/actmon/activity.db
-./target/release/actmon summary --database /path/to/actmon/activity.db --json
+./target/release/actmon summary
+./target/release/actmon summary --json
+./target/release/actmon summary --database /path/to/another/activity.db
 ```
+
+Summary defaults to `$HOME/.local/share/actmon/activity.db`, matching the standard
+service deployment. After installation, run `actmon summary` from any directory.
+Use `--database` when your collector uses a custom path. The default requires an
+absolute `HOME`; an explicit database path works without it. Missing databases
+produce an error without creating files or directories.
 
 The read-only report covers local midnight to now. It shows recorded input totals,
 first/last input, minutes containing input, hourly activity, collection coverage,

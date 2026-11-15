@@ -3,13 +3,15 @@ use std::process::Command;
 #[test]
 fn summary_supports_text_json_and_local_midnight_without_writing() {
     let temp = tempfile::tempdir().unwrap();
-    let path = temp.path().join("activity.db");
+    let home = temp.path().join("home with spaces");
+    let path = home.join(".local/share/actmon/activity.db");
     let store = actmon::db::Store::open(&path, "fixture", "{}").unwrap();
     let before = store.connection().total_changes();
     let output = Command::new(env!("CARGO_BIN_EXE_actmon"))
         .env("TZ", "Asia/Jakarta")
-        .args(["summary", "--database"])
-        .arg(&path)
+        .env("HOME", &home)
+        .current_dir(temp.path())
+        .arg("summary")
         .output()
         .unwrap();
     assert!(
@@ -22,8 +24,10 @@ fn summary_supports_text_json_and_local_midnight_without_writing() {
     assert!(text.contains("Idle after 300s"));
     assert!(text.contains("Timezone: UTC+07:00"));
     assert_eq!(text.matches("+07:00").count(), 1);
+    assert!(text.contains(&format!("Database: {}", path.display())));
     let output = Command::new(env!("CARGO_BIN_EXE_actmon"))
         .env("TZ", "UTC")
+        .env_remove("HOME")
         .args(["summary", "--database"])
         .arg(&path)
         .args(["--json", "--idle-after-seconds", "600"])
@@ -65,4 +69,21 @@ fn invalid_thresholds_and_missing_database_fail_without_creating_files() {
         .unwrap();
     assert!(!output.status.success());
     assert!(!path.exists());
+    let output = Command::new(env!("CARGO_BIN_EXE_actmon"))
+        .env("HOME", temp.path())
+        .arg("summary")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!temp.path().join(".local").exists());
+    for home in [None, Some(""), Some("relative-home")] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_actmon"));
+        command.env_remove("HOME").arg("summary");
+        if let Some(value) = home {
+            command.env("HOME", value);
+        }
+        let output = command.output().unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("specify --database"));
+    }
 }
