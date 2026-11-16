@@ -58,11 +58,43 @@ fn five_minute_grace_is_excluded_and_input_ends_idle() {
     assert_eq!(r.minutes_containing_input, 2);
     assert_eq!(r.unknown_us, 0);
     assert_eq!(r.hours.iter().map(|h| h.idle_us).sum::<i64>(), r.idle_us);
-    let text = r.render();
+    let text = r.render(true);
     assert_eq!(text.matches("+07:00").count(), 1);
     assert!(text.contains("Timezone: UTC+07:00"));
     assert!(text.contains("First input: 00:00:00\nLast input: 00:20:00\n"));
     assert!(text.contains("Idle 00:05:00 to 00:20:00"));
+}
+
+#[test]
+fn compact_text_summarizes_gaps_and_details_preserve_all_periods() {
+    let mut rows: Vec<_> = (0..25).map(quiet).collect();
+    rows[10].incomplete = KEYBOARD;
+    rows[20].incomplete = KEYBOARD;
+    rows[21].incomplete = KEYBOARD;
+    let r = report(&rows, 0, 25, 5);
+    let text = r.render(false);
+    assert!(text.contains("Complete coverage: 0h 00m 22s\n"));
+    assert!(text.contains("Unknown: 0h 00m 03s across 2 gaps; longest: 0h 00m 02s\n"));
+    assert!(text.contains("Idle after 5s: 0h 00m 09s; longest: 0h 00m 05s\n"));
+    assert!(!text.contains("\n  Idle "));
+    assert!(!text.contains("\n  Unknown "));
+    assert!(text.contains("Use --details"));
+    assert!(text.contains("\nHour "));
+
+    let detailed = r.render(true);
+    assert_eq!(detailed.matches("\n  Idle ").count(), 2);
+    assert_eq!(detailed.matches("\n  Unknown ").count(), 2);
+    assert!(detailed.contains("  Unknown 00:00:10 to 00:00:11 (0h 00m 01s)"));
+    assert!(detailed.contains("  Unknown 00:00:20 to 00:00:22 (0h 00m 02s)"));
+    assert_eq!(
+        detailed.lines().find(|line| line.starts_with("Unknown:")),
+        text.lines().find(|line| line.starts_with("Unknown:"))
+    );
+    assert!(!detailed.contains("Use --details"));
+
+    let complete = report(&[quiet(0)], 0, 1, 5).render(false);
+    assert!(complete.contains("Unknown: 0h 00m 00s across 0 gaps; longest: 0h 00m 00s\n"));
+    assert!(!complete.contains("Use --details"));
 }
 
 #[test]
@@ -238,7 +270,7 @@ fn hourly_durations_split_straddling_intervals_and_share_timezone_header() {
     assert_eq!(r.hours[1].complete_coverage_us, 10 * SECOND);
     assert_eq!(r.hours[0].idle_us, 4_500_000);
     assert_eq!(r.hours[1].idle_us, 10 * SECOND);
-    let text = r.render();
+    let text = r.render(false);
     assert!(text.contains("\n01:00 "));
     assert_eq!(text.matches("+07:00").count(), 1);
 }
@@ -337,7 +369,7 @@ fn daylight_saving_hours_preserve_distinct_offsets_and_actual_day_length() {
         assert_eq!(r.hours.len(), length);
         assert_eq!(r.unknown_us, length as i64 * 3600 * SECOND);
         if length == 25 {
-            let text = r.render();
+            let text = r.render(false);
             assert!(text.contains("Timezone: UTC-04:00 to UTC-05:00"));
             assert_eq!(text.matches("-04:00").count(), 1);
             assert_eq!(text.matches("-05:00").count(), 1);

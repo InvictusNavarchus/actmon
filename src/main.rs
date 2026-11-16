@@ -26,6 +26,9 @@ enum Command {
         /// Print structured timestamps and microsecond durations instead of text.
         #[arg(long)]
         json: bool,
+        /// List individual idle and unknown periods in text output.
+        #[arg(long)]
+        details: bool,
     },
     /// Publish a verified local snapshot. Does not schedule jobs or delete old snapshots.
     Backup {
@@ -101,13 +104,14 @@ fn main() -> Result<()> {
             database,
             idle_after_seconds,
             json,
+            details,
         } => {
             let database = resolve_database(database)?;
             let report = actmon::summary::today(&database, idle_after_seconds)?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
-                print!("{}", report.render());
+                print!("{}", report.render(details));
             }
         }
         Command::Backup {

@@ -31,6 +31,20 @@ fn summary_supports_text_json_and_local_midnight_without_writing() {
     assert!(text.contains("Timezone: UTC+07:00"));
     assert_eq!(text.matches("+07:00").count(), 1);
     assert!(text.contains(&format!("Database: {}", path.display())));
+    assert!(text.contains(" across 1 gap; longest: "));
+    assert!(!text.contains("\n  Unknown "));
+    assert!(text.contains("Use --details"));
+    assert_eq!(data_version(), before);
+    let output = Command::new(env!("CARGO_BIN_EXE_actmon"))
+        .env("TZ", "Asia/Jakarta")
+        .env("HOME", &home)
+        .args(["summary", "--details"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("\n  Unknown 00:00:00 to "));
+    assert!(!text.contains("Use --details"));
     assert_eq!(data_version(), before);
     let output = Command::new(env!("CARGO_BIN_EXE_actmon"))
         .env("TZ", "UTC")
@@ -52,6 +66,18 @@ fn summary_supports_text_json_and_local_midnight_without_writing() {
     assert_eq!(report["recorded_intervals"], 0);
     assert_eq!(report["idle_us"], 0);
     assert!(report["unknown_us"].as_i64().unwrap() > 0);
+    assert_eq!(report["idle_periods"].as_array().unwrap().len(), 0);
+    assert_eq!(report["unknown_periods"].as_array().unwrap().len(), 1);
+    let output = Command::new(env!("CARGO_BIN_EXE_actmon"))
+        .args(["summary", "--database"])
+        .arg(&path)
+        .args(["--json", "--details"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let detailed: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(detailed["idle_periods"].as_array().unwrap().len(), 0);
+    assert_eq!(detailed["unknown_periods"].as_array().unwrap().len(), 1);
     assert_eq!(data_version(), before);
 }
 

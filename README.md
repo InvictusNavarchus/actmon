@@ -106,6 +106,7 @@ for interpreting coverage and inspecting measurements with SQL.
 
 ```sh
 ./target/release/actmon summary
+./target/release/actmon summary --details
 ./target/release/actmon summary --json
 ./target/release/actmon summary --database /path/to/another/activity.db
 ```
@@ -118,7 +119,11 @@ produce an error without creating files or directories.
 
 The read-only report covers local midnight to now. It shows recorded input totals,
 first/last input, minutes containing input, hourly activity, collection coverage,
-and idle periods. Idle begins after five minutes of continuously observed quiet;
+and idle totals. Unknown coverage includes its total duration, gap count, and longest
+gap. Use `--details` to list individual idle and unknown periods; `--json` always
+includes all periods, regardless of `--details`.
+
+Idle begins after five minutes of continuously observed quiet;
 the first five minutes are excluded. Use `--idle-after-seconds 600` to change the
 threshold (1–86400 seconds).
 

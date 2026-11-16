@@ -473,7 +473,7 @@ fn display_time(value: &str, format: &str) -> String {
 }
 
 impl Summary {
-    pub fn render(&self) -> String {
+    pub fn render(&self, details: bool) -> String {
         let start_offset = display_time(&self.start, "%:z");
         let end_offset = display_time(&self.end, "%:z");
         let timezone = if start_offset == end_offset {
@@ -521,9 +521,22 @@ impl Summary {
         .unwrap();
         writeln!(
             text,
-            "Complete coverage: {}; unknown: {}",
+            "Complete coverage: {}\nUnknown: {} across {} gap{}; longest: {}",
             duration(self.complete_coverage_us),
-            duration(self.unknown_us)
+            duration(self.unknown_us),
+            self.unknown_periods.len(),
+            if self.unknown_periods.len() == 1 {
+                ""
+            } else {
+                "s"
+            },
+            duration(
+                self.unknown_periods
+                    .iter()
+                    .map(|gap| gap.duration_us)
+                    .max()
+                    .unwrap_or(0)
+            )
         )
         .unwrap();
         for coverage in &self.coverage {
@@ -543,25 +556,29 @@ impl Summary {
             duration(self.longest_idle_us)
         )
         .unwrap();
-        for idle in &self.idle_periods {
-            writeln!(
-                text,
-                "  Idle {} to {} ({})",
-                display_time(&idle.start, "%H:%M:%S"),
-                display_time(&idle.end, "%H:%M:%S"),
-                duration(idle.duration_us)
-            )
-            .unwrap();
-        }
-        for gap in &self.unknown_periods {
-            writeln!(
-                text,
-                "  Unknown {} to {} ({})",
-                display_time(&gap.start, "%H:%M:%S"),
-                display_time(&gap.end, "%H:%M:%S"),
-                duration(gap.duration_us)
-            )
-            .unwrap();
+        if details {
+            for idle in &self.idle_periods {
+                writeln!(
+                    text,
+                    "  Idle {} to {} ({})",
+                    display_time(&idle.start, "%H:%M:%S"),
+                    display_time(&idle.end, "%H:%M:%S"),
+                    duration(idle.duration_us)
+                )
+                .unwrap();
+            }
+            for gap in &self.unknown_periods {
+                writeln!(
+                    text,
+                    "  Unknown {} to {} ({})",
+                    display_time(&gap.start, "%H:%M:%S"),
+                    display_time(&gap.end, "%H:%M:%S"),
+                    duration(gap.duration_us)
+                )
+                .unwrap();
+            }
+        } else if !self.idle_periods.is_empty() || !self.unknown_periods.is_empty() {
+            text.push_str("Use --details to list individual idle and unknown periods.\n");
         }
         writeln!(
             text,

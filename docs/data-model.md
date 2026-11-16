@@ -85,8 +85,14 @@ are not created. Summary reads an existing v1 Actmon database in a single
 read transaction, including committed WAL data. It reports local midnight to the
 time the command started, using the process's local timezone (including `TZ` when
 set). Text is the default; `--json` provides RFC 3339 timestamps with UTC offsets
-and integer microsecond durations. Text shows the date and UTC offset once in the
-header, with time-only labels throughout the report. If the offset changes during
+and integer microsecond durations. Default text summarizes idle and unknown
+coverage without listing individual periods. Unknown coverage includes total
+duration, gap count, and longest gap (zero when there are no gaps). Use `--details`
+to include every idle and unknown period in text. JSON always includes the full
+`idle_periods` and `unknown_periods` arrays, regardless of `--details`.
+
+Text shows the date and UTC offset once in the header, with time-only labels
+throughout the report. If the offset changes during
 the day, the header shows the starting and ending offsets; JSON retains offsets
 on each timestamp to distinguish repeated hours. A nonexistent local midnight
 produces an explicit error rather than guessing a boundary.
