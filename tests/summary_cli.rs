@@ -6,7 +6,13 @@ fn summary_supports_text_json_and_local_midnight_without_writing() {
     let home = temp.path().join("home with spaces");
     let path = home.join(".local/share/actmon/activity.db");
     let store = actmon::db::Store::open(&path, "fixture", "{}").unwrap();
-    let before = store.connection().total_changes();
+    let data_version = || {
+        store
+            .connection()
+            .query_row("PRAGMA data_version", [], |row| row.get::<_, i64>(0))
+            .unwrap()
+    };
+    let before = data_version();
     let output = Command::new(env!("CARGO_BIN_EXE_actmon"))
         .env("TZ", "Asia/Jakarta")
         .env("HOME", &home)
@@ -25,6 +31,7 @@ fn summary_supports_text_json_and_local_midnight_without_writing() {
     assert!(text.contains("Timezone: UTC+07:00"));
     assert_eq!(text.matches("+07:00").count(), 1);
     assert!(text.contains(&format!("Database: {}", path.display())));
+    assert_eq!(data_version(), before);
     let output = Command::new(env!("CARGO_BIN_EXE_actmon"))
         .env("TZ", "UTC")
         .env_remove("HOME")
@@ -45,7 +52,7 @@ fn summary_supports_text_json_and_local_midnight_without_writing() {
     assert_eq!(report["recorded_intervals"], 0);
     assert_eq!(report["idle_us"], 0);
     assert!(report["unknown_us"].as_i64().unwrap() > 0);
-    assert_eq!(store.connection().total_changes(), before);
+    assert_eq!(data_version(), before);
 }
 
 #[test]

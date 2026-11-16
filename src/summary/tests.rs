@@ -153,13 +153,40 @@ fn no_data_is_unknown_and_quiet_does_not_extend_past_last_commit() {
 
 #[test]
 fn midnight_lookback_establishes_idle_but_counts_are_today_only() {
-    let mut rows: Vec<_> = (-400..20).map(quiet).collect();
-    input(&mut rows[0], 0);
-    let r = report(&rows, 0, 20, 300);
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("activity.db");
+    let mut store = Store::open(&path, "fixture", "{}").unwrap();
+    let at = |second: i64| Stamp {
+        mono_us: (second + 1000) * SECOND,
+        utc_us: MIDNIGHT + second * SECOND,
+        boot_us: (second + 1000) * SECOND,
+    };
+    let mut agg = Aggregator::new(at(-400));
+    agg.coverage(at(-400), ALL_INPUT, true, false);
+    agg.input(at(-400), at(-400).mono_us, Action::Key);
+    store.write(&agg.finish(at(20), true)).unwrap();
+    // Exercise the production SQL lookback: the earlier input is outside its
+    // bounded range, but enough complete quiet must be fetched before midnight.
+    let r = summarize(
+        &path,
+        MIDNIGHT,
+        MIDNIGHT + 20 * SECOND,
+        300,
+        &FixedOffset::east_opt(7 * 3600).unwrap(),
+    )
+    .unwrap();
     assert_eq!(r.idle_us, 20 * SECOND);
     assert_eq!(r.counts.key_presses, 0);
     assert!(r.first_input.is_none());
     assert!(r.start.starts_with("2026-11-15T00:00:00"));
+    assert_eq!(r.recorded_intervals, 20);
+    assert_eq!(r.complete_coverage_us, 20 * SECOND);
+    assert_eq!(r.unknown_us, 0);
+    assert!(
+        r.coverage
+            .iter()
+            .all(|category| category.complete_us == 20 * SECOND)
+    );
 }
 
 #[test]
