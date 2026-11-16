@@ -88,6 +88,91 @@ fn absent_sources_are_unavailable_and_collector_locks_database_until_shutdown() 
 }
 
 #[test]
+fn status_defaults_to_home_database_and_allows_explicit_overrides() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("home with spaces");
+    let db = home.join(".local/share/actmon/activity.db");
+    let store = actmon::db::Store::open(&db, "fixture", "{}").unwrap();
+    let before: i64 = store
+        .connection()
+        .query_row("PRAGMA data_version", [], |row| row.get(0))
+        .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_actmon"))
+        .env("HOME", &home)
+        .current_dir(root.path())
+        .arg("status")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        report,
+        serde_json::to_value(actmon::db::status(&db).unwrap()).unwrap()
+    );
+    let after: i64 = store
+        .connection()
+        .query_row("PRAGMA data_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(after, before);
+
+    let custom = root.path().join("custom.db");
+    drop(actmon::db::Store::open(&custom, "fixture", "{}").unwrap());
+    let _store = actmon::db::Store::open(&custom, "second-run", "{}").unwrap();
+    let expected = serde_json::to_value(actmon::db::status(&custom).unwrap()).unwrap();
+    assert_ne!(report["run_id"], expected["run_id"]);
+    for home in [None, Some(home.as_path()), Some(Path::new("relative-home"))] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_actmon"));
+        command.env_remove("HOME").current_dir(root.path()).args([
+            "status",
+            "--database",
+            "custom.db",
+        ]);
+        if let Some(value) = home {
+            command.env("HOME", value);
+        }
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report, expected);
+    }
+}
+
+#[test]
+fn status_default_rejects_missing_database_and_invalid_home_without_creating_files() {
+    let root = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_actmon"))
+        .env("HOME", root.path())
+        .arg("status")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("open existing database"));
+    assert!(!root.path().join(".local").exists());
+    for home in [None, Some(""), Some("relative-home")] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_actmon"));
+        command
+            .env_remove("HOME")
+            .current_dir(root.path())
+            .arg("status");
+        if let Some(value) = home {
+            command.env("HOME", value);
+        }
+        let output = command.output().unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("specify --database"));
+    }
+    assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+}
+
+#[test]
 fn metadata_and_status_commands_do_not_create_databases() {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir(root.path().join("sys")).unwrap();

@@ -14,6 +14,9 @@ sqlite3 -readonly /path/to/actmon/activity.db
 
 Status opens an existing database read-only and reports the newest run's latest
 persisted interval and commit metadata. It does not create or migrate a database.
+Like `summary`, it defaults to `$HOME/.local/share/actmon/activity.db` when
+`--database` is omitted. The default requires an absolute `HOME`; an explicit
+path bypasses home-directory lookup. Missing databases are not created.
 An absent orderly-stop timestamp does not prove that the collector is still
 running: the process may have crashed. Check commit age and journal evidence.
 

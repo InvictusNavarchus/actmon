@@ -71,9 +71,21 @@ enum Command {
     },
     /// Read latest persisted coverage and commit metadata as JSON.
     Status {
+        /// Existing database; defaults to $HOME/.local/share/actmon/activity.db.
         #[arg(long)]
-        database: PathBuf,
+        database: Option<PathBuf>,
     },
+}
+
+fn resolve_database(database: Option<PathBuf>) -> Result<PathBuf> {
+    match database {
+        Some(path) => Ok(path),
+        None => Ok(std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .filter(|home| home.is_absolute())
+            .context("set HOME to an absolute home directory or specify --database")?
+            .join(".local/share/actmon/activity.db")),
+    }
 }
 
 fn main() -> Result<()> {
@@ -90,14 +102,7 @@ fn main() -> Result<()> {
             idle_after_seconds,
             json,
         } => {
-            let database = match database {
-                Some(path) => path,
-                None => std::env::var_os("HOME")
-                    .map(PathBuf::from)
-                    .filter(|home| home.is_absolute())
-                    .context("set HOME to an absolute home directory or specify --database")?
-                    .join(".local/share/actmon/activity.db"),
-            };
+            let database = resolve_database(database)?;
             let report = actmon::summary::today(&database, idle_after_seconds)?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&report)?);
@@ -140,7 +145,7 @@ fn main() -> Result<()> {
         }
         Command::Status { database } => println!(
             "{}",
-            serde_json::to_string_pretty(&actmon::db::status(&database)?)?
+            serde_json::to_string_pretty(&actmon::db::status(&resolve_database(database)?)?)?
         ),
         Command::Collect {
             database,

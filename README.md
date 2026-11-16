@@ -55,8 +55,14 @@ with an explicit opt-out.
 ### Check status
 
 ```sh
+./target/release/actmon status
 ./target/release/actmon status --database /path/to/actmon/activity.db
 ```
+
+Status defaults to `$HOME/.local/share/actmon/activity.db`, matching Summary and
+the standard service deployment. Use `--database` for a custom path. The default
+requires an absolute `HOME`; an explicit path works without it. Missing databases
+produce an error without creating files or directories.
 
 Status reads an existing database and reports the latest persisted interval and
 commit metadata as JSON. It does not prove the collector is still running; check
