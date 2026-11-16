@@ -26,8 +26,9 @@ recovery; it does not simulate power loss or establish SSD flush behavior.
 
 Summary tests cover idle thresholds, input endpoints, repeat-only activity,
 per-category coverage, incomplete input counts, gaps and restarts, overlapping
-recordings, midnight lookback, clipped boundaries, hourly durations, and read-only
-live-WAL queries with retrospective loss. CLI checks cover text/JSON reporting and
+recordings, midnight lookback, clipped boundaries, hourly durations, partial-hour
+timezone transitions, and read-only live-WAL queries with retrospective loss.
+CLI checks cover text/JSON reporting and
 invalid thresholds.
 
 ## Offline packaging validation

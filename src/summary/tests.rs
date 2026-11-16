@@ -348,3 +348,90 @@ fn daylight_saving_hours_preserve_distinct_offsets_and_actual_day_length() {
         }
     }
 }
+
+#[test]
+fn partial_hour_transitions_keep_activity_and_durations_in_separate_rows() {
+    if std::env::var_os("ACTMON_TEST_PARTIAL_HOUR").is_none() {
+        for zone in ["Pacific/Chatham", "Australia/Lord_Howe"] {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .env("TZ", zone)
+                .env("ACTMON_TEST_PARTIAL_HOUR", "1")
+                .args(["--exact", "summary::tests::partial_hour_transitions_keep_activity_and_durations_in_separate_rows"])
+                .output().unwrap();
+            assert!(
+                output.status.success(),
+                "{zone}: {}{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        return;
+    }
+    // Month, day, expected rows,
+    // and the distinct row labels containing the input on either side.
+    let cases = if std::env::var("TZ").unwrap() == "Pacific/Chatham" {
+        [
+            (4, 5, 26, "03:00:00.000000+13:45", "02:45:00.000000+12:45"),
+            (9, 27, 24, "02:00:00.000000+12:45", "03:45:00.000000+13:45"),
+        ]
+    } else {
+        [
+            (4, 5, 25, "01:00:00.000000+11:00", "01:30:00.000000+10:30"),
+            (10, 4, 24, "01:00:00.000000+10:30", "02:30:00.000000+11:00"),
+        ]
+    };
+    for (month, day, expected_rows, before, after) in cases {
+        // Explicit offsets select the post-transition occurrence of repeated
+        // local times without depending on local-time ambiguity resolution.
+        let transition = DateTime::parse_from_rfc3339(&format!("2026-{month:02}-{day:02}T{after}"))
+            .unwrap()
+            .timestamp_micros();
+        assert!(timestamp(transition, &Local).ends_with(after));
+        let start = Local.with_ymd_and_hms(2026, month, day, 0, 0, 0).unwrap();
+        let end = Local
+            .with_ymd_and_hms(2026, month, day + 1, 0, 0, 0)
+            .unwrap();
+        let mut rows: Vec<_> = (-600..600)
+            .map(|second| {
+                let mut row = quiet(second + 1000);
+                row.start = transition + second * SECOND;
+                row
+            })
+            .collect();
+        input(rows.first_mut().unwrap(), 0);
+        input(rows.last_mut().unwrap(), 0);
+        let r = build(
+            Path::new("fixture.db"),
+            start.timestamp_micros(),
+            end.timestamp_micros(),
+            300,
+            &rows,
+            &Local,
+        )
+        .unwrap();
+        assert_eq!(r.hours.len(), expected_rows);
+        for label in [before, after] {
+            let hour = r
+                .hours
+                .iter()
+                .find(|hour| hour.start.ends_with(label))
+                .unwrap();
+            assert_eq!(hour.counts.key_presses, 1, "{label}");
+            assert_eq!(hour.complete_coverage_us, 600 * SECOND, "{label}");
+        }
+        assert_eq!(r.counts.key_presses, 2);
+        assert_eq!(r.complete_coverage_us, 1200 * SECOND);
+        assert_eq!(r.idle_us, 899 * SECOND);
+        assert_eq!(
+            r.hours
+                .iter()
+                .map(|hour| hour.complete_coverage_us)
+                .sum::<i64>(),
+            r.complete_coverage_us
+        );
+        assert_eq!(
+            r.hours.iter().map(|hour| hour.idle_us).sum::<i64>(),
+            r.idle_us
+        );
+    }
+}

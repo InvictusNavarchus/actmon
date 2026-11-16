@@ -88,6 +88,10 @@ the day, the header shows the starting and ending offsets; JSON retains offsets
 on each timestamp to distinguish repeated hours. A nonexistent local midnight
 produces an explicit error rather than guessing a boundary.
 
+Hourly rows follow UTC order and start a new segment whenever the local hour or
+UTC offset changes. A transition partway through an hour creates a partial-hour
+row labeled with its actual local start (for example, `02:45`).
+
 Input totals include key downs, separately observed repeats, all recorded mouse
 button downs, and counts of intervals containing motion or scrolling. First/last
 input uses stored event offsets when no repeats are present. Any interval containing

@@ -3,12 +3,13 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
+    ops::Bound::{Excluded, Unbounded},
     path::Path,
     time::Duration,
 };
 
 use anyhow::{Context, Result, ensure};
-use chrono::{DateTime, Local, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Local, Offset, TimeZone, Timelike, Utc};
 use rusqlite::{Connection, OpenFlags, params};
 use serde::Serialize;
 
@@ -123,14 +124,6 @@ where
         .to_rfc3339_opts(chrono::SecondsFormat::Micros, false)
 }
 
-fn hour_start<Tz: TimeZone>(us: i64, tz: &Tz) -> i64 {
-    let dt = DateTime::from_timestamp_micros(us)
-        .expect("validated timestamp")
-        .with_timezone(tz);
-    us - i64::from(dt.minute() * 60 + dt.second()) * SECOND
-        - i64::from(dt.timestamp_subsec_micros())
-}
-
 fn period<Tz: TimeZone>(start: i64, end: i64, tz: &Tz) -> Period
 where
     Tz::Offset: std::fmt::Display,
@@ -142,21 +135,23 @@ where
     }
 }
 
-fn add_duration<Tz: TimeZone>(
+fn add_duration(
     hours: &mut BTreeMap<i64, Hour>,
     from: i64,
     to: i64,
-    tz: &Tz,
     field: fn(&mut Hour) -> &mut i64,
 ) {
     let mut cursor = from;
     while cursor < to {
-        let key = hour_start(cursor, tz);
-        let next = (cursor.div_euclid(60 * SECOND) + 1) * 60 * SECOND;
-        let stop = to.min(next);
-        if let Some(hour) = hours.get_mut(&key) {
-            *field(hour) += stop - cursor;
-        }
+        let stop = hours
+            .range((Excluded(cursor), Unbounded))
+            .next()
+            .map_or(to, |(boundary, _)| to.min(*boundary));
+        let (_, hour) = hours
+            .range_mut(..=cursor)
+            .next_back()
+            .expect("hourly buckets cover the report window");
+        *field(hour) += stop - cursor;
         cursor = stop;
     }
 }
@@ -295,15 +290,27 @@ where
     };
     let mut hours = BTreeMap::new();
     let mut minute = start.div_euclid(60 * SECOND) * 60 * SECOND;
+    let mut previous_hour = None;
     while minute < end {
-        let key = hour_start(minute, tz);
-        hours.entry(key).or_insert_with(|| Hour {
-            start: timestamp(key, tz),
-            counts: InputCounts::default(),
-            minutes_containing_input: 0,
-            complete_coverage_us: 0,
-            idle_us: 0,
-        });
+        let local = DateTime::from_timestamp_micros(minute)
+            .expect("validated timestamp")
+            .with_timezone(tz);
+        let identity = (local.date_naive(), local.hour(), local.offset().fix());
+        if previous_hour != Some(identity) {
+            // Keep real UTC boundaries. Rounding back a local minute count can
+            // collide when an offset transition happens partway through an hour.
+            hours.insert(
+                minute,
+                Hour {
+                    start: timestamp(minute, tz),
+                    counts: InputCounts::default(),
+                    minutes_containing_input: 0,
+                    complete_coverage_us: 0,
+                    idle_us: 0,
+                },
+            );
+            previous_hour = Some(identity);
+        }
         minute += 60 * SECOND;
     }
     let mut minutes = BTreeSet::new();
@@ -382,7 +389,9 @@ where
         }
         report.repeat_reporting_unknown_intervals += usize::from(row.repeats.is_none());
         let hour = hours
-            .get_mut(&hour_start(clipped_start, tz))
+            .range_mut(..=clipped_start)
+            .next_back()
+            .map(|(_, hour)| hour)
             .context("missing hourly bucket")?;
         if inside {
             hour.counts.add(row);
@@ -414,7 +423,7 @@ where
             }
             coverage_end = clipped_end;
             report.complete_coverage_us += clipped_duration;
-            add_duration(&mut hours, clipped_start, clipped_end, tz, |hour| {
+            add_duration(&mut hours, clipped_start, clipped_end, |hour| {
                 &mut hour.complete_coverage_us
             });
         }
@@ -435,7 +444,7 @@ where
         } else {
             merged.push((from, to));
         }
-        add_duration(&mut hours, from, to, tz, |hour| &mut hour.idle_us);
+        add_duration(&mut hours, from, to, |hour| &mut hour.idle_us);
     }
     for (from, to) in merged {
         report.idle_us += to - from;
