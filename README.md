@@ -16,6 +16,31 @@ responded. Missing or incomplete collection coverage must not be read as inactiv
 Requires Linux, Rust 1.89 or newer, and a C compiler for bundled SQLite.
 Building Actmon does not install or start services.
 
+### Install or update the command
+
+From this checkout, run:
+
+```sh
+bash scripts/install.sh
+actmon status
+```
+
+The script builds a native release with locked dependencies, checks the executable,
+and atomically installs it at `/usr/local/bin/actmon`. Run it as your normal user;
+it requests `sudo` only when the destination requires it. Run it again after source
+changes to update. Rust and a C compiler are build requirements; the installed
+command does not need Rust or the checkout.
+
+To choose a different existing directory, use
+`bash scripts/install.sh --bin-dir "$HOME/.local/bin"`. The script reports missing
+PATH entries or another `actmon` taking precedence, without editing your shell.
+It refuses to replace a symlink or a directory at the executable path.
+
+Installation changes only the executable. Running services keep their existing
+executable until restarted; service configuration, permissions, and recorded data
+are preserved. The packaged services use `/usr/local/bin/actmon` regardless of
+`--bin-dir`. See [systemd deployment](docs/systemd.md) for service setup and upgrades.
+
 ### Build and find your devices
 
 ```sh

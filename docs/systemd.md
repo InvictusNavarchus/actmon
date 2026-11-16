@@ -1,7 +1,8 @@
 # System service deployment
 
-These are reviewable installation steps, not an installer. Run them only when
-ready to deploy. They change system files, device permissions, and running services.
+These are reviewable service setup steps, not a service installer. Run them only
+when ready to deploy. They change system files, device permissions, and running
+services.
 The templates target Linux with systemd; offline validation used Fedora's systemd
 259. They have not yet been exercised as running services on this laptop.
 
@@ -89,7 +90,7 @@ For a first installation using the reviewed example names:
 
 ```sh
 sudo install -d -o invictus -g invictus -m 0700 /home/invictus/.local/share/actmon
-sudo install -m 0755 target/release/actmon /usr/local/bin/actmon
+bash scripts/install.sh
 sudo install -d -m 0755 /etc/actmon /etc/sysusers.d /etc/udev/rules.d
 sudo install -m 0644 packaging/sysusers/actmon.conf /etc/sysusers.d/actmon.conf
 sudo systemd-sysusers /etc/sysusers.d/actmon.conf
@@ -231,10 +232,17 @@ requires coordination with external readers.
 
 ## Upgrade or remove
 
-Before replacing a running binary, stop the timer and both services. Preserve local
-configuration and data. **The default data directory changed from
-`/var/lib/actmon/<user>` to `/home/<user>/.local/share/actmon`.** Existing installations
-must choose their paths before installing the new units and restarting:
+For an executable-only update, run `bash scripts/install.sh` as your normal user.
+It builds and validates the new binary before requesting installation privileges,
+then atomically replaces `/usr/local/bin/actmon`. Running jobs retain their old
+executable until they exit; new commands use the replacement immediately. The
+script does not restart services, change units or local configuration, or move data.
+Restart the collector separately when it needs to use the new executable.
+
+For service configuration or storage changes, stop the timer and both services
+first. Preserve local configuration and data. **The default data directory changed
+from `/var/lib/actmon/<user>` to `/home/<user>/.local/share/actmon`.** Existing
+installations must choose their paths before installing the new units and restarting:
 
 - **Keep existing storage:** explicitly set `ACTMON_DATABASE` and
   `ACTMON_BACKUP_DIRECTORY` to the old locations in the environment file. Apply

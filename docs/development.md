@@ -31,6 +31,12 @@ timezone transitions, and read-only live-WAL queries with retrospective loss.
 CLI checks cover text/JSON reporting and
 invalid thresholds.
 
+Installer tests run a copied script with fixture build tools and disposable
+installation directories. They verify native build selection, executable use,
+atomic replacement, preservation after build/validation/copy failures, symlink
+and directory conflicts, argument handling, and PATH shadowing without sudo or
+host service changes.
+
 ## Offline packaging validation
 
 The systemd templates and device rules can be checked without deployment:
