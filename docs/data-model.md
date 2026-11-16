@@ -90,8 +90,9 @@ produces an explicit error rather than guessing a boundary.
 
 Input totals include key downs, separately observed repeats, all recorded mouse
 button downs, and counts of intervals containing motion or scrolling. First/last
-input uses stored event offsets. Repeat-only timing is bounded conservatively by
-the interval endpoints because repeat events have no stored first/last offsets.
+input uses stored event offsets when no repeats are present. Any interval containing
+repeats uses its endpoints conservatively, even when other input has precise
+offsets, because repeat events have no stored first/last offsets.
 NULL repeat measurements are counted as intervals with unknown repeat reporting;
 the observed repeat total does not imply those intervals had zero repeats.
 
