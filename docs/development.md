@@ -39,7 +39,7 @@ host service changes.
 
 ## Offline packaging validation
 
-The systemd templates and device rules can be checked without deployment:
+The systemd units and device rules can be checked without deployment:
 
 ```sh
 bash scripts/verify-packaging.sh

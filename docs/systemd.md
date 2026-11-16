@@ -3,13 +3,14 @@
 These are reviewable service setup steps, not a service installer. Run them only
 when ready to deploy. They change system files, device permissions, and running
 services.
-The templates target Linux with systemd; offline validation used Fedora's systemd
+The units target Linux with systemd; offline validation used Fedora's systemd
 259. They have not yet been exercised as running services on this laptop.
 
 ## Account, paths, and device access
 
 Use the existing `invictus` account via the system manager, not `systemctl --user`.
-`actmon@invictus.service` starts at boot independently of KDE, login, or lingering.
+`actmon.service` starts at boot independently of KDE, login, or lingering.
+These are plain units for this single-account deployment; no instance suffix is needed.
 The account choice keeps the owner-only database and snapshots readable by your
 existing Homekeep job without ACL export machinery. It is not a security boundary
 against other processes running as your own user.
@@ -21,14 +22,14 @@ against other processes running as your own user.
 | Live database | `/home/invictus/.local/share/actmon/activity.db` |
 | Published snapshots (Homekeep source) | `/home/invictus/.local/share/actmon/backups/` |
 | Private backup state/staging | `/home/invictus/.local/share/actmon/.backups.actmon-backup/` |
-| Collector | `actmon@invictus.service` |
-| Daily timer | `actmon-backup@invictus.timer` |
-| Backup job | `actmon-backup@invictus.service` |
+| Collector | `actmon.service` |
+| Daily timer | `actmon-backup.timer` |
+| Backup job | `actmon-backup.service` |
 
 Installation creates the data directory as its user with mode 0700; both jobs
-use umask 0077. The templates assume a home at `/home/<user>` available at boot;
-they wait for its backing mount. They do not discover alternate home paths or
-inherit shell XDG settings. `%h` cannot be used here: in the system manager it
+use umask 0077. The units target this laptop's `invictus` account and explicitly use
+`/home/invictus`, waiting for its backing mount at boot. They do not discover
+alternate home paths or inherit shell XDG settings. `%h` cannot be used here: in the system manager it
 resolves to `/root` regardless of `User=`. See path overrides below for other homes.
 `ProtectHome=tmpfs` hides `/home`, `/root`, and `/run/user`; `BindPaths=` exposes
 only the Actmon directory within those trees as writable inside each service.
@@ -91,12 +92,12 @@ For a first installation using the reviewed example names:
 ```sh
 sudo install -d -o invictus -g invictus -m 0700 /home/invictus/.local/share/actmon
 bash scripts/install.sh
-sudo install -d -m 0755 /etc/actmon /etc/sysusers.d /etc/udev/rules.d
+sudo install -d -m 0755 /etc/actmon /etc/sysusers.d /etc/udev/rules.d /usr/local/lib/systemd/system
 sudo install -m 0644 packaging/sysusers/actmon.conf /etc/sysusers.d/actmon.conf
 sudo systemd-sysusers /etc/sysusers.d/actmon.conf
-sudo install -m 0644 packaging/systemd/actmon@.service /etc/systemd/system/actmon@.service
-sudo install -m 0644 packaging/systemd/actmon-backup@.service /etc/systemd/system/actmon-backup@.service
-sudo install -m 0644 packaging/systemd/actmon-backup@.timer /etc/systemd/system/actmon-backup@.timer
+sudo install -m 0644 packaging/systemd/actmon.service /usr/local/lib/systemd/system/actmon.service
+sudo install -m 0644 packaging/systemd/actmon-backup.service /usr/local/lib/systemd/system/actmon-backup.service
+sudo install -m 0644 packaging/systemd/actmon-backup.timer /usr/local/lib/systemd/system/actmon-backup.timer
 sudo install -m 0644 packaging/actmon.env.example /etc/actmon/invictus.env
 sudo install -m 0644 packaging/udev/99-actmon-input.rules.example /etc/udev/rules.d/99-actmon-input.rules
 sudo udevadm verify /etc/udev/rules.d/99-actmon-input.rules
@@ -107,6 +108,11 @@ sudo udevadm control --reload-rules
 Do not overwrite an existing configuration or rule file blindly during upgrades.
 On SELinux systems, use the distribution's normal labels for installed binaries,
 units, and state. Investigate actual denials if encountered; do not disable SELinux.
+
+Packaged units live in `/usr/local/lib/systemd/system`; put local overrides in
+`/etc/systemd/system/<unit>.d/`. Keeping the packaged timer outside `/etc` allows
+`systemctl mask` to create its `/etc/systemd/system/actmon-backup.timer` symlink
+without colliding with the unit file.
 
 Reloading rules affects future device events. Apply them to **only the two selected
 current nodes** after confirming their names (event numbers can change). For
@@ -132,9 +138,9 @@ Skip removal if that explicit entry is absent. Do not remove unrelated desktop A
 Enable the collector and daily backups together:
 
 ```sh
-sudo systemctl enable --now actmon@invictus.service actmon-backup@invictus.timer
-systemctl status actmon@invictus.service actmon-backup@invictus.timer
-journalctl -u actmon@invictus.service -n 50 --no-pager
+sudo systemctl enable --now actmon.service actmon-backup.timer
+systemctl status actmon.service actmon-backup.timer
+journalctl -u actmon.service -n 50 --no-pager
 ```
 
 `Also=` makes enabling the collector include the timer; the explicit command above
@@ -142,23 +148,23 @@ also starts both immediately. Daily backup scheduling is enabled by default in
 this installation flow. To opt out, including across later collector enables:
 
 ```sh
-sudo systemctl mask --now actmon-backup@invictus.timer
+sudo systemctl mask --now actmon-backup.timer
 ```
 
 To opt back in, unmask it and run `systemctl enable --now` for the timer.
 Masking the timer does not prevent an explicitly requested manual backup job.
 
-## Validate the deployed instance
+## Validate the deployed services
 
 After several seconds of normal input:
 
 ```sh
 actmon status --database /home/invictus/.local/share/actmon/activity.db
-systemctl show actmon@invictus.service -p User -p SupplementaryGroups -p MainPID -p NRestarts
-sudo systemctl start actmon-backup@invictus.service
+systemctl show actmon.service -p User -p SupplementaryGroups -p MainPID -p NRestarts
+sudo systemctl start actmon-backup.service
 actmon backup-status --destination /home/invictus/.local/share/actmon/backups
-systemctl list-timers actmon-backup@invictus.timer
-journalctl -u actmon-backup@invictus.service -n 50 --no-pager
+systemctl list-timers actmon-backup.timer
+journalctl -u actmon-backup.service -n 50 --no-pager
 ```
 
 Confirm available coverage for all supported sources, increasing timestamps, a
@@ -218,7 +224,7 @@ is required. Resetting the old paths matters for alternate home layouts where
 Do not choose a mount point for the published directory if its sibling staging
 would land on another filesystem.
 
-Change the timer through `systemctl edit actmon-backup@invictus.timer`, for example:
+Change the timer through `systemctl edit actmon-backup.timer`, for example:
 
 ```ini
 [Timer]
@@ -231,6 +237,55 @@ Actmon still reports excess over seven snapshots without deleting anything; prun
 requires coordination with external readers.
 
 ## Upgrade or remove
+
+### Replace the old instance names
+
+Existing deployments using `actmon@invictus.service` must switch to the plain
+names before enabling the new collector. The account, environment file, binary,
+database, and backup paths are unchanged; no data migration or rebuild is needed.
+The old and new collector must not run together against the same database.
+
+Before switching, inspect the old units with `systemctl cat` and record their
+enabled, active, and masked states. Install the three new unit files into
+`/usr/local/lib/systemd/system` using the commands above, preserving the existing
+environment file and udev rules. Copy any template or instance drop-ins to the
+corresponding plain unit's `.d` directory, reviewing conflicts instead of blindly
+overwriting files. For this laptop's existing 06:00 schedule, with no new drop-in
+already present:
+
+```sh
+sudo install -d -m 0755 /etc/systemd/system/actmon-backup.timer.d
+sudo cp -a /etc/systemd/system/actmon-backup@invictus.timer.d/schedule.conf /etc/systemd/system/actmon-backup.timer.d/schedule.conf
+```
+
+For the currently enabled collector and timer, stop and disable the old names:
+
+```sh
+sudo systemctl disable --now actmon-backup@invictus.timer actmon@invictus.service
+sudo systemctl stop actmon-backup@invictus.service
+```
+
+If `/var/lib/systemd/timers/stamp-actmon-backup@invictus.timer` exists, copy it with
+`sudo cp -a` to `/var/lib/systemd/timers/stamp-actmon-backup.timer` while both timers
+are stopped. Preserving its timestamp avoids an extra persistent catch-up caused
+solely by the rename. Preserve an existing backup opt-out by masking the new timer
+before enabling the collector; do not start the timer in that case.
+
+For the currently enabled backup schedule:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now actmon.service actmon-backup.timer
+systemctl status actmon.service actmon-backup.timer
+systemctl list-timers actmon-backup.timer
+```
+
+Confirm the effective schedule, historical coverage, and fresh collection using
+the deployment validation above. After verification, archive the old template
+files and their old drop-in directories outside systemd's unit search paths, then
+reload the manager. Keep them for rollback. Do not leave the old instance enabled.
+
+### Update the binary or storage
 
 For an executable-only update, run `bash scripts/install.sh` as your normal user.
 It builds and validates the new binary before requesting installation privileges,
@@ -279,11 +334,11 @@ schema migration is added by this packaging milestone.
 To stop deployment while preserving all recorded data:
 
 ```sh
-sudo systemctl disable --now actmon-backup@invictus.timer actmon@invictus.service
-sudo systemctl stop actmon-backup@invictus.service
+sudo systemctl disable --now actmon-backup.timer actmon.service
+sudo systemctl stop actmon-backup.service
 ```
 
-For complete removal, remove only the installed Actmon templates, environment,
+For complete removal, remove only the installed Actmon units, drop-ins, environment,
 sysusers definition, binary, and Actmon udev rule, then reload the managers. Restore
 normal device permissions through a reconnect or targeted change event after rule
 removal. Keep the group until it has no remaining uses; removing its sysusers
@@ -291,7 +346,7 @@ file does not delete the group. Do not delete history or backups as part of unin
 
 ## Offline verification
 
-`bash scripts/verify-packaging.sh` checks instantiated units in a temporary root,
+`bash scripts/verify-packaging.sh` checks the units in a temporary root,
 validates sysusers in dry-run mode, validates udev rule syntax without resolving
 an uninstalled group, and checks the daily calendar expression. It installs no host
 files and starts no service. It requires systemd analysis/sysusers tools and udevadm

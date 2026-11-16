@@ -420,10 +420,10 @@ configuration is included.
 
 ## Systemd packaging status
 
-System service templates, a daily persistent backup timer, sysusers group creation,
+Single-account system services, a daily persistent backup timer, sysusers group creation,
 an environment-file example, and narrowly matched udev rule examples are provided
-under [`packaging/`](../packaging/). Instance data defaults to
-`/home/<user>/.local/share/actmon` with mode 0700; the backup service has no real
+under [`packaging/`](../packaging/). The services run as `invictus` and data defaults to
+`/home/invictus/.local/share/actmon` with mode 0700; the backup service has no real
 input devices. Collector failures restart with a bounded start rate, while a
 failed backup leaves collection running. The documented
 installation enables daily backups, supports timer masking as an explicit opt-out,

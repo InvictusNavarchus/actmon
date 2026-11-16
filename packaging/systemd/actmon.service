@@ -1,18 +1,18 @@
 [Unit]
-RequiresMountsFor=/home/%i/.local/share/actmon
-Description=Actmon input activity recorder for %i
+RequiresMountsFor=/home/invictus/.local/share/actmon
+Description=Actmon input activity recorder
 After=local-fs.target
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Service]
 Type=exec
-User=%i
+User=invictus
 SupplementaryGroups=actmon-input
 UMask=0077
-Environment="ACTMON_DATABASE=/home/%i/.local/share/actmon/activity.db"
+Environment="ACTMON_DATABASE=/home/invictus/.local/share/actmon/activity.db"
 Environment="ACTMON_KEYBOARD_NAME=keyboard-debouncer"
-EnvironmentFile=/etc/actmon/%i.env
+EnvironmentFile=/etc/actmon/invictus.env
 ExecStart=/usr/local/bin/actmon collect --database ${ACTMON_DATABASE} --keyboard-name ${ACTMON_KEYBOARD_NAME} --mouse-name ${ACTMON_MOUSE_NAME}
 Restart=on-failure
 RestartSec=5s
@@ -22,7 +22,7 @@ StandardError=journal
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=tmpfs
-BindPaths=/home/%i/.local/share/actmon
+BindPaths=/home/invictus/.local/share/actmon
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
@@ -34,4 +34,4 @@ DeviceAllow=char-input r
 
 [Install]
 WantedBy=multi-user.target
-Also=actmon-backup@%i.timer
+Also=actmon-backup.timer

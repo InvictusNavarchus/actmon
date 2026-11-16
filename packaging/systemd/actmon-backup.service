@@ -1,15 +1,15 @@
 [Unit]
-RequiresMountsFor=/home/%i/.local/share/actmon
-Description=Verified local Actmon snapshot for %i
-After=actmon@%i.service
+RequiresMountsFor=/home/invictus/.local/share/actmon
+Description=Verified local Actmon snapshot
+After=actmon.service
 
 [Service]
 Type=oneshot
-User=%i
+User=invictus
 UMask=0077
-Environment="ACTMON_DATABASE=/home/%i/.local/share/actmon/activity.db"
-Environment="ACTMON_BACKUP_DIRECTORY=/home/%i/.local/share/actmon/backups"
-EnvironmentFile=/etc/actmon/%i.env
+Environment="ACTMON_DATABASE=/home/invictus/.local/share/actmon/activity.db"
+Environment="ACTMON_BACKUP_DIRECTORY=/home/invictus/.local/share/actmon/backups"
+EnvironmentFile=/etc/actmon/invictus.env
 ExecStart=/usr/local/bin/actmon backup --database ${ACTMON_DATABASE} --destination ${ACTMON_BACKUP_DIRECTORY}
 # Longer than the command's 300-second cooperative deadline; still bounds a hang.
 TimeoutStartSec=10min
@@ -19,7 +19,7 @@ StandardError=journal
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=tmpfs
-BindPaths=/home/%i/.local/share/actmon
+BindPaths=/home/invictus/.local/share/actmon
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectKernelTunables=yes

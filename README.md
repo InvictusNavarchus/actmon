@@ -73,9 +73,10 @@ drain queued writes. Missing or inaccessible devices are recorded as unavailable
 while the other source can keep collecting.
 
 For device permissions and collection as a system service, follow the
-[systemd deployment guide](docs/systemd.md). Service data defaults to
-`/home/<user>/.local/share/actmon`; the installation flow enables daily backups
-with an explicit opt-out.
+[systemd deployment guide](docs/systemd.md). The packaged `actmon.service` and
+`actmon-backup.service` run as `invictus`, with data under
+`/home/invictus/.local/share/actmon`. The installation flow enables daily backups
+through `actmon-backup.timer`, with an explicit opt-out.
 
 ### Check status
 
