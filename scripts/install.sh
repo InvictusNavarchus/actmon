@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: bash scripts/install.sh [--bin-dir PATH]
+Usage: bash install.sh [--bin-dir PATH]
 
 Build and install/update Actmon from this checkout (Linux, Rust, C compiler).
   --bin-dir PATH  Existing installation directory (default: /usr/local/bin).

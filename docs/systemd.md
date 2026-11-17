@@ -4,7 +4,27 @@ These are reviewable service setup steps, not a service installer. Run them only
 when ready to deploy. They change system files, device permissions, and running
 services.
 The units target Linux with systemd; offline validation used Fedora's systemd
-259. They have not yet been exercised as running services on this laptop.
+259. Offline checks validate packaging; they do not prove runtime access or useful
+collection. Follow the deployed-service validation after installation or updates.
+
+## Execution and installation contract
+
+| Concern | Behavior |
+| --- | --- |
+| Availability | Boot-managed collection before login and after logout, once storage and input sources are ready |
+| Manager and identity | System manager; existing unprivileged `invictus` account |
+| Access | `actmon-input` assigned to the collector service only; read access to selected input devices; no input injection |
+| Installation authority | Build as the invoking user; elevate only system file/account/device configuration |
+| First activation | Install files first, then explicitly enable/start the collector and backup timer |
+| Updates | Binary replacement does not restart collection or alter enablement; explicitly restart an active collector when ready |
+| Customization | Preserve the environment file, device rules, drop-ins, timer opt-outs, and existing history |
+| Removal | Explicitly stop/disable owned units; retain recorded data and shared accounts/groups |
+
+A lingering user service could provide boot/logout availability, but would need a
+new device-access arrangement. The system service supplies the collector's group
+without adding it to the login account globally. This deployment does not use
+lingering. The backup job receives no input group; its system scope keeps snapshot
+management with this deployment, rather than satisfying a device requirement.
 
 ## Account, paths, and device access
 
@@ -91,7 +111,7 @@ For a first installation using the reviewed example names:
 
 ```sh
 sudo install -d -o invictus -g invictus -m 0700 /home/invictus/.local/share/actmon
-bash scripts/install.sh
+bash install.sh
 sudo install -d -m 0755 /etc/actmon /etc/sysusers.d /etc/udev/rules.d /usr/local/lib/systemd/system
 sudo install -m 0644 packaging/sysusers/actmon.conf /etc/sysusers.d/actmon.conf
 sudo systemd-sysusers /etc/sysusers.d/actmon.conf
@@ -287,12 +307,17 @@ reload the manager. Keep them for rollback. Do not leave the old instance enable
 
 ### Update the binary or storage
 
-For an executable-only update, run `bash scripts/install.sh` as your normal user.
+For an executable-only update, run `bash install.sh` as your normal user.
 It builds and validates the new binary before requesting installation privileges,
 then atomically replaces `/usr/local/bin/actmon`. Running jobs retain their old
 executable until they exit; new commands use the replacement immediately. The
 script does not restart services, change units or local configuration, or move data.
-Restart the collector separately when it needs to use the new executable.
+Restart the collector separately when it needs to use the new executable. Record
+its prior state first: leave an inactive collector inactive, retain enablement and
+masks, and do not re-enable an opted-out timer. For an active collector whose new
+binary is ready, `sudo systemctl try-restart actmon.service` activates the update
+without starting a collector that has since become inactive. Let a running backup
+job finish using its existing executable.
 
 For service configuration or storage changes, stop the timer and both services
 first. Preserve local configuration and data. **The default data directory changed
