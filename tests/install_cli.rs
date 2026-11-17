@@ -31,6 +31,11 @@ impl Fixture {
             repo.join("scripts/install.sh"),
         )
         .unwrap();
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh"),
+            repo.join("install.sh"),
+        )
+        .unwrap();
         executable(
             &tools.join("rustc"),
             "#!/bin/sh\necho 'host: native-test'\n",
@@ -78,7 +83,7 @@ cp "$FIXTURE_BINARY" "$target_dir/$target/release/actmon"
         )
         .unwrap();
         command
-            .arg(self.repo.join("scripts/install.sh"))
+            .arg(self.repo.join("install.sh"))
             .env("PATH", path)
             .env("FIXTURE_ROOT", self.root.path())
             .env("FIXTURE_BINARY", env!("CARGO_BIN_EXE_actmon"))
@@ -221,5 +226,18 @@ fn installer_help_invalid_options_and_path_shadowing_are_reported() {
     let output = success(fixture.install().output().unwrap());
     assert!(output.contains("PATH selects"));
     assert!(output.contains(fixture.tools.join("actmon").to_str().unwrap()));
+    fixture.assert_clean();
+}
+
+#[test]
+fn legacy_installer_entrypoint_remains_usable() {
+    let fixture = Fixture::new();
+    success(
+        Command::new("bash")
+            .arg(fixture.repo.join("scripts/install.sh"))
+            .arg("--help")
+            .output()
+            .unwrap(),
+    );
     fixture.assert_clean();
 }

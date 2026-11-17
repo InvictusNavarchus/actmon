@@ -21,7 +21,7 @@ Building Actmon does not install or start services.
 From this checkout, run:
 
 ```sh
-bash scripts/install.sh
+bash install.sh
 actmon status
 ```
 
@@ -32,7 +32,7 @@ changes to update. Rust and a C compiler are build requirements; the installed
 command does not need Rust or the checkout.
 
 To choose a different existing directory, use
-`bash scripts/install.sh --bin-dir "$HOME/.local/bin"`. The script reports missing
+`bash install.sh --bin-dir "$HOME/.local/bin"`. The script reports missing
 PATH entries or another `actmon` taking precedence, without editing your shell.
 It refuses to replace a symlink or a directory at the executable path.
 
@@ -40,6 +40,13 @@ Installation changes only the executable. Running services keep their existing
 executable until restarted; service configuration, permissions, and recorded data
 are preserved. The packaged services use `/usr/local/bin/actmon` regardless of
 `--bin-dir`. See [systemd deployment](docs/systemd.md) for service setup and upgrades.
+
+The previous `bash scripts/install.sh` entrypoint remains supported. The root
+entrypoint is the recommended install/update command; both invoke the same logic.
+System service installation is administrative, while collection runs unprivileged.
+The collector receives input access through its service-specific supplementary
+group, avoiding a global device-access grant to your login account. Lingering is
+not required. Unit installation and first activation are separate steps.
 
 ### Build and find your devices
 
